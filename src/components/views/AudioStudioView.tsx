@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { audioEngine } from '../../services/audioEngine';
-import { studioAudioEngine } from '../../services/pitchShifterAudio';
+import { studioAudioEngine, TrackWaveformData } from '../../services/pitchShifterAudio';
 import {
   generateRecorderAccompaniment,
   generateOrffGroove,
@@ -26,7 +26,13 @@ import {
   Clock,
   Sparkles,
   ListMusic,
-  FileAudio
+  FileAudio,
+  Activity,
+  Layers,
+  Loader2,
+  VolumeX,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 
 export interface StudioTrack {
@@ -100,90 +106,122 @@ export const AudioStudioView: React.FC = () => {
   ]);
   const [newMarkerLabel, setNewMarkerLabel] = useState('');
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // DAW Waveform Data & Audio Engine State
+  const [waveformData, setWaveformData] = useState<TrackWaveformData | null>(null);
+  const [isLoadingAudio, setIsLoadingAudio] = useState<boolean>(false);
+  const [hoverTime, setHoverTime] = useState<number | null>(null);
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const currentTrack = playlist[currentTrackIndex] || null;
 
-  // Whenever the active track changes, load it into the audio element
+  // Whenever the active track changes, decode its PCM data and extract real waveform peaks
   useEffect(() => {
-    if (audioRef.current && currentTrack) {
-      audioRef.current.src = currentTrack.url;
-      audioRef.current.playbackRate = playbackRate;
-      audioRef.current.load();
-      setCurrentTime(0);
-      setLoopA(null);
-      setLoopB(null);
-
-      if (isPlaying) {
-        audioRef.current.play().catch((err) => {
-          console.warn('Auto-play prevented:', err);
-          setIsPlaying(false);
-        });
-      }
+    let isCancelled = false;
+    if (!currentTrack) {
+      setWaveformData(null);
+      return;
     }
+
+    setIsLoadingAudio(true);
+    studioAudioEngine.stop();
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setLoopA(null);
+    setLoopB(null);
+
+    studioAudioEngine
+      .loadTrack(currentTrack.url, currentTrack.id)
+      .then((data) => {
+        if (!isCancelled) {
+          setWaveformData(data);
+          setDuration(data.duration);
+          setIsLoadingAudio(false);
+          studioAudioEngine.setPitch(pitchShift);
+          studioAudioEngine.setSpeed(playbackRate);
+        }
+      })
+      .catch((err) => {
+        if (!isCancelled) {
+          console.error('Failed to decode track waveform:', err);
+          setIsLoadingAudio(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [currentTrackIndex, playlist]);
 
-  // Sync playback rate with audio element
+  // Audio Engine Subscriptions: 60fps Playhead Time Updates & Progression
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.playbackRate = playbackRate;
-    }
-  }, [playbackRate]);
+    const unsubTime = studioAudioEngine.onTimeUpdate((time) => {
+      setCurrentTime(time);
+    });
+    const unsubEnd = studioAudioEngine.onEnded(() => {
+      handleEnded();
+    });
+    const unsubState = studioAudioEngine.onStateChange((state) => {
+      setIsPlaying(state === 'playing');
+    });
 
-  // Hook pitch shifter audio engine on track or mount
+    return () => {
+      unsubTime();
+      unsubEnd();
+      unsubState();
+    };
+  }, [currentTrackIndex, repeatMode, playlist.length]);
+
+  // Cleanup on unmount
   useEffect(() => {
-    if (audioRef.current) {
-      studioAudioEngine.init(audioRef.current);
-      studioAudioEngine.setPitch(pitchShift);
-    }
-  }, [currentTrackIndex, audioRef.current]);
+    return () => {
+      studioAudioEngine.stop();
+    };
+  }, []);
 
-  // Handle Real-Time Pitch Shifting
+  // Handle Real-Time Pitch Shifting (Native Web Audio Detune)
   const handlePitchChange = (newPitch: number) => {
     const clamped = Math.max(-12, Math.min(12, newPitch));
     setPitchShift(clamped);
     studioAudioEngine.setPitch(clamped);
-    if (audioRef.current) {
-      studioAudioEngine.init(audioRef.current);
-      studioAudioEngine.unlock();
-    }
+
+    const semitoneStr = clamped > 0 ? `+${clamped}` : `${clamped}`;
     showToast(
       clamped === 0
-        ? 'Pitch reset to original key'
-        : `Pitch shifted ${clamped > 0 ? '+' : ''}${clamped} semitones`,
+        ? 'Pitch reset to original key (0¢)'
+        : `Pitch shifted ${semitoneStr} semitone${Math.abs(clamped) === 1 ? '' : 's'} (${clamped > 0 ? `+${clamped * 100}` : clamped * 100}¢)`,
       'info'
     );
   };
 
-  // Handle Play / Pause with robust AudioContext unlocking
-  const togglePlay = async () => {
-    audioEngine.unlockAudio();
+  // Handle Real-Time Playback Speed
+  const handleSpeedChange = (newRate: number) => {
+    const clamped = Math.max(0.5, Math.min(1.5, Math.round(newRate * 100) / 100));
+    setPlaybackRate(clamped);
+    studioAudioEngine.setSpeed(clamped);
+  };
 
-    if (!audioRef.current || !currentTrack) {
+  // Handle Play / Pause
+  const togglePlay = async () => {
+    if (!currentTrack) {
       showToast('Select or upload a track to play', 'info');
       return;
     }
 
     if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
+      studioAudioEngine.pause();
     } else {
-      studioAudioEngine.init(audioRef.current);
       await studioAudioEngine.unlock();
-
-      audioRef.current
-        .play()
-        .then(() => {
-          setIsPlaying(true);
-        })
-        .catch((err) => {
-          console.error('Audio play error:', err);
-          showToast('Could not start playback. Tap to activate.', 'warning');
-          setIsPlaying(false);
-        });
+      studioAudioEngine.play();
     }
+  };
+
+  // Seek immediately
+  const seekTo = (time: number) => {
+    const clamped = Math.max(0, Math.min(duration, time));
+    setCurrentTime(clamped);
+    studioAudioEngine.seek(clamped);
   };
 
   // Skip to Previous Track
@@ -213,28 +251,13 @@ export const AudioStudioView: React.FC = () => {
   // On audio ended handler (Playlist progression)
   const handleEnded = () => {
     if (repeatMode === 'one') {
-      if (audioRef.current) {
-        audioRef.current.currentTime = 0;
-        audioRef.current.play().catch(() => {});
-      }
+      studioAudioEngine.seek(0);
+      studioAudioEngine.play();
     } else if (repeatMode === 'all' || currentTrackIndex < playlist.length - 1) {
       handleNextTrack();
     } else {
       setIsPlaying(false);
       setCurrentTime(0);
-    }
-  };
-
-  // Time update and A-B looper
-  const handleTimeUpdate = () => {
-    if (!audioRef.current) return;
-    const curr = audioRef.current.currentTime;
-    setCurrentTime(curr);
-
-    if (loopA !== null && loopB !== null && loopB > loopA) {
-      if (curr >= loopB) {
-        audioRef.current.currentTime = loopA;
-      }
     }
   };
 
@@ -336,7 +359,7 @@ export const AudioStudioView: React.FC = () => {
     showToast('Track removed from playlist', 'info');
   };
 
-  // Waveform visualization canvas
+  // True DAW Waveform Visualization Canvas
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -347,42 +370,180 @@ export const AudioStudioView: React.FC = () => {
     const height = canvas.height;
     ctx.clearRect(0, 0, width, height);
 
-    const bars = 70;
-    const barWidth = width / bars;
+    // 1. Dark DAW Slate Background
+    ctx.fillStyle = '#090d16';
+    ctx.fillRect(0, 0, width, height);
+
     const effectiveDuration = duration > 0 ? duration : 30;
+    const centerY = height / 2;
 
-    for (let i = 0; i < bars; i++) {
-      const progress = (i / bars) * effectiveDuration;
-      const isPast = progress <= currentTime;
-      const isInLoop = loopA !== null && loopB !== null && progress >= loopA && progress <= loopB;
+    // 2. Draw DAW Time Gridlines & Markers (every 5 seconds)
+    const intervalSec = effectiveDuration > 60 ? 10 : 5;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+    ctx.lineWidth = 1;
+    ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
+    ctx.font = '9px JetBrains Mono, monospace';
 
-      // Seed realistic visual waveform curve
-      const harmonic1 = Math.sin(i * 0.22);
-      const harmonic2 = Math.cos(i * 0.14) * 0.5;
-      const h = Math.abs(harmonic1 + harmonic2) * (height * 0.65) + 12;
-      const y = (height - h) / 2;
-
-      ctx.fillStyle = isInLoop
-        ? '#f59e0b'
-        : isPast
-        ? '#f43f5e'
-        : '#cbd5e1';
-
+    for (let sec = 0; sec <= effectiveDuration; sec += intervalSec) {
+      const x = (sec / effectiveDuration) * width;
       ctx.beginPath();
-      ctx.roundRect(i * barWidth, y, barWidth - 2.5, h, 3);
-      ctx.fill();
-    }
-  }, [currentTime, duration, loopA, loopB]);
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
 
-  const seekTo = (time: number) => {
-    setCurrentTime(time);
-    if (audioRef.current) {
-      audioRef.current.currentTime = time;
+      const timeLabel = formatTime(sec);
+      ctx.fillText(timeLabel, x + 3, 11);
     }
-  };
+
+    // Center 0dB Axis Line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(width, centerY);
+    ctx.stroke();
+
+    // 3. A-B Loop Region Highlight Overlay
+    if (loopA !== null && loopB !== null && loopB > loopA) {
+      const loopX1 = (loopA / effectiveDuration) * width;
+      const loopX2 = (loopB / effectiveDuration) * width;
+      const loopW = loopX2 - loopX1;
+
+      // Golden Amber Shaded Fill
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.18)';
+      ctx.fillRect(loopX1, 0, loopW, height);
+
+      // Loop Boundaries
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(loopX1, 0, loopW, height);
+
+      // [A] & [B] Badges
+      ctx.fillStyle = '#f59e0b';
+      ctx.font = 'bold 9px JetBrains Mono, monospace';
+      ctx.fillText('[A]', loopX1 + 2, height - 4);
+      ctx.fillText('[B]', loopX2 - 16, height - 4);
+    }
+
+    // 4. Draw Real Decoded Waveform Peaks
+    const points = waveformData?.points;
+    const numPoints = points ? points.length : 0;
+    const playheadX = (currentTime / effectiveDuration) * width;
+
+    if (numPoints > 0) {
+      const barWidth = width / numPoints;
+
+      for (let i = 0; i < numPoints; i++) {
+        const x = i * barWidth;
+        const pt = points![i];
+        const isPast = x <= playheadX;
+
+        // Amplitude height: scale max/min to height/2
+        const peakMax = Math.max(0.04, pt.max);
+        const peakMin = Math.min(-0.04, pt.min);
+        const yTop = centerY - peakMax * (centerY * 0.9);
+        const yBottom = centerY - peakMin * (centerY * 0.9);
+        const h = Math.max(2, yBottom - yTop);
+
+        if (isPast) {
+          // Vibrant Radiant Played Peak (Rose to Purple gradient)
+          const grad = ctx.createLinearGradient(0, yTop, 0, yBottom);
+          grad.addColorStop(0, '#fb7185'); // rose-400
+          grad.addColorStop(0.5, '#e11d48'); // rose-600
+          grad.addColorStop(1, '#818cf8'); // indigo-400
+          ctx.fillStyle = grad;
+        } else {
+          // Unplayed Peak Silhouette (Dark sleek studio slate)
+          ctx.fillStyle = '#334155'; // slate-700
+        }
+
+        ctx.fillRect(x, yTop, Math.max(1, barWidth - 0.5), h);
+
+        // Subtle RMS core highlight
+        if (pt.rms > 0.05) {
+          const rmsH = pt.rms * (centerY * 0.9);
+          ctx.fillStyle = isPast ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.08)';
+          ctx.fillRect(x, centerY - rmsH, Math.max(1, barWidth - 0.5), rmsH * 2);
+        }
+      }
+    } else {
+      // Loading / Fallback placeholder
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+      ctx.font = '11px Inter, sans-serif';
+      ctx.fillText('Decoding DAW waveform data...', width / 2 - 90, centerY + 4);
+    }
+
+    // 5. Rehearsal Markers Overlay
+    markers.forEach((m, idx) => {
+      const mx = (m.time / effectiveDuration) * width;
+      if (mx >= 0 && mx <= width) {
+        ctx.strokeStyle = '#06b6d4'; // cyan-500
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(mx, 14);
+        ctx.lineTo(mx, height);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Marker Flag Tag
+        ctx.fillStyle = '#0891b2';
+        ctx.fillRect(mx - 2, 0, 18, 12);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 8px Inter, sans-serif';
+        ctx.fillText(`M${idx + 1}`, mx + 1, 9);
+      }
+    });
+
+    // 6. Hover Ghost Scrubber
+    if (hoverTime !== null && hoverTime >= 0 && hoverTime <= effectiveDuration) {
+      const hx = (hoverTime / effectiveDuration) * width;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(hx, 0);
+      ctx.lineTo(hx, height);
+      ctx.stroke();
+
+      // Floating time tooltip
+      const tooltip = formatTime(hoverTime);
+      const textWidth = ctx.measureText(tooltip).width;
+      const tooltipX = Math.max(4, Math.min(width - textWidth - 12, hx - textWidth / 2));
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.fillRect(tooltipX - 4, centerY - 24, textWidth + 8, 16);
+      ctx.strokeStyle = '#06b6d4';
+      ctx.strokeRect(tooltipX - 4, centerY - 24, textWidth + 8, 16);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px JetBrains Mono, monospace';
+      ctx.fillText(tooltip, tooltipX, centerY - 13);
+    }
+
+    // 7. Glowing Playhead Needle
+    if (playheadX >= 0 && playheadX <= width) {
+      ctx.shadowColor = '#f43f5e';
+      ctx.shadowBlur = 8;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(playheadX, 0);
+      ctx.lineTo(playheadX, height);
+      ctx.stroke();
+
+      // Top Needle Cap
+      ctx.fillStyle = '#f43f5e';
+      ctx.beginPath();
+      ctx.moveTo(playheadX - 5, 0);
+      ctx.lineTo(playheadX + 5, 0);
+      ctx.lineTo(playheadX, 8);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.shadowBlur = 0; // reset shadow
+    }
+  }, [currentTime, duration, loopA, loopB, waveformData, hoverTime, markers]);
 
   const setLoopPointA = () => {
     setLoopA(currentTime);
+    studioAudioEngine.setLoopA(currentTime);
     showToast(`Loop Start set at ${formatTime(currentTime)}`, 'info');
   };
 
@@ -392,12 +553,14 @@ export const AudioStudioView: React.FC = () => {
       return;
     }
     setLoopB(currentTime);
+    studioAudioEngine.setLoopB(currentTime);
     showToast(`Loop End set at ${formatTime(currentTime)}`, 'info');
   };
 
   const clearLoop = () => {
     setLoopA(null);
     setLoopB(null);
+    studioAudioEngine.clearLoop();
     showToast('A-B Loop cleared', 'info');
   };
 
@@ -422,32 +585,6 @@ export const AudioStudioView: React.FC = () => {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-200">
-      {/* Hidden Master HTMLAudioElement */}
-      <audio
-        ref={audioRef}
-        crossOrigin="anonymous"
-        preload="auto"
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={() => {
-          if (audioRef.current) {
-            setDuration(audioRef.current.duration || 0);
-          }
-        }}
-        onDurationChange={() => {
-          if (audioRef.current) {
-            setDuration(audioRef.current.duration || 0);
-          }
-        }}
-        onEnded={handleEnded}
-        onError={(e) => {
-          console.error('Audio playback error', e);
-          showToast('Could not decode audio. Try another MP3/WAV file.', 'error');
-          setIsPlaying(false);
-        }}
-      />
-
       {/* Hidden File Input for fallback or standard pick */}
       <input
         ref={fileInputRef}
@@ -538,34 +675,72 @@ export const AudioStudioView: React.FC = () => {
                 )}
               </div>
 
-              {/* Waveform visualizer canvas */}
-              <div className="relative rounded-2xl bg-stone-100 dark:bg-stone-800/80 p-3 overflow-hidden border border-stone-200/80 dark:border-stone-700/80">
-                <canvas
-                  ref={canvasRef}
-                  width={800}
-                  height={90}
-                  className="w-full h-24 block cursor-pointer"
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const pos = (e.clientX - rect.left) / rect.width;
-                    const targetSec = Math.max(0, Math.min(duration, pos * duration));
-                    seekTo(targetSec);
-                  }}
-                />
+              {/* DAW Waveform Visualizer Lane */}
+              <div className="relative rounded-2xl bg-slate-950 p-4 overflow-hidden border border-slate-800 shadow-2xl">
+                {/* DAW Lane Header */}
+                <div className="flex items-center justify-between text-xs pb-2 mb-2 border-b border-slate-800/80 font-mono">
+                  <div className="flex items-center gap-2 text-slate-400">
+                    <Activity className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="font-bold text-slate-300">DAW Master Track Waveform</span>
+                    <span className="text-[10px] text-slate-500 hidden sm:inline">
+                      • 800 Peaks Analyzed • PCM Stereo
+                    </span>
+                  </div>
 
-                {/* Scrubber slider bar */}
+                  <div className="flex items-center gap-2">
+                    {isLoadingAudio ? (
+                      <div className="flex items-center gap-1.5 text-cyan-400 text-[11px] animate-pulse">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>Decoding audio waveform...</span>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-emerald-400 font-bold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-ping"></span>
+                        Decoded & Hardware Accelerated
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Canvas Waveform */}
+                <div className="relative">
+                  <canvas
+                    ref={canvasRef}
+                    width={900}
+                    height={110}
+                    className="w-full h-28 block cursor-crosshair rounded-xl"
+                    onMouseMove={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const pos = (e.clientX - rect.left) / rect.width;
+                      const hoverSec = Math.max(0, Math.min(duration, pos * duration));
+                      setHoverTime(hoverSec);
+                    }}
+                    onMouseLeave={() => setHoverTime(null)}
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const pos = (e.clientX - rect.left) / rect.width;
+                      const targetSec = Math.max(0, Math.min(duration, pos * duration));
+                      seekTo(targetSec);
+                    }}
+                  />
+                </div>
+
+                {/* DAW Scrubber Slider Bar & Time Readouts */}
                 <div className="pt-2">
                   <input
                     type="range"
                     min={0}
                     max={duration || 100}
-                    step={0.1}
+                    step={0.05}
                     value={currentTime}
                     onChange={(e) => seekTo(Number(e.target.value))}
-                    className="w-full h-1.5 bg-stone-200 dark:bg-stone-700 rounded-lg appearance-none cursor-pointer accent-rose-500"
+                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500"
                   />
-                  <div className="flex justify-between text-xs font-mono font-bold text-stone-500 dark:text-stone-400 pt-1">
-                    <span>{formatTime(currentTime)}</span>
+                  <div className="flex justify-between text-xs font-mono font-bold text-slate-400 pt-1.5">
+                    <span className="text-rose-400 font-extrabold">{formatTime(currentTime)}</span>
+                    <span className="text-[11px] text-slate-500">
+                      {duration > 0 ? `${(currentTime / duration * 100).toFixed(1)}%` : '0%'}
+                    </span>
                     <span>{formatTime(duration)}</span>
                   </div>
                 </div>
@@ -598,9 +773,17 @@ export const AudioStudioView: React.FC = () => {
 
                   <button
                     onClick={togglePlay}
-                    className="p-4 rounded-2xl bg-gradient-to-tr from-rose-500 to-indigo-600 hover:from-rose-600 hover:to-indigo-700 text-white shadow-elevated transition-all active:scale-95"
+                    disabled={isLoadingAudio}
+                    className="p-4 rounded-2xl bg-gradient-to-tr from-rose-500 to-indigo-600 hover:from-rose-600 hover:to-indigo-700 disabled:opacity-50 text-white shadow-elevated transition-all active:scale-95"
+                    title={isPlaying ? 'Pause' : 'Play'}
                   >
-                    {isPlaying ? <Pause className="w-6 h-6 fill-white" /> : <Play className="w-6 h-6 fill-white ml-0.5" />}
+                    {isLoadingAudio ? (
+                      <Loader2 className="w-6 h-6 animate-spin text-white" />
+                    ) : isPlaying ? (
+                      <Pause className="w-6 h-6 fill-white" />
+                    ) : (
+                      <Play className="w-6 h-6 fill-white ml-0.5" />
+                    )}
                   </button>
 
                   <button
@@ -655,6 +838,7 @@ export const AudioStudioView: React.FC = () => {
 
               {/* Speed & Pitch Controls */}
               <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200/60 dark:border-stone-800 space-y-3">
+                {/* Speed Section */}
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
                     Rehearsal Speed
@@ -669,70 +853,103 @@ export const AudioStudioView: React.FC = () => {
                   max="1.5"
                   step="0.05"
                   value={playbackRate}
-                  onChange={(e) => setPlaybackRate(Number(e.target.value))}
+                  onChange={(e) => handleSpeedChange(Number(e.target.value))}
                   className="w-full h-1.5 bg-stone-200 dark:bg-stone-700 rounded-lg appearance-none cursor-pointer accent-rose-500"
                 />
                 <div className="flex justify-between text-[10px] font-mono text-stone-400">
-                  <button onClick={() => setPlaybackRate(0.75)} className="hover:text-rose-600">75% (Slow)</button>
-                  <button onClick={() => setPlaybackRate(1.0)} className="hover:text-rose-600">100%</button>
-                  <button onClick={() => setPlaybackRate(1.2)} className="hover:text-rose-600">120% (Fast)</button>
+                  <button onClick={() => handleSpeedChange(0.75)} className="hover:text-rose-600">75% (Slow)</button>
+                  <button onClick={() => handleSpeedChange(1.0)} className="hover:text-rose-600 font-bold">100% (Normal)</button>
+                  <button onClick={() => handleSpeedChange(1.2)} className="hover:text-rose-600">120% (Fast)</button>
                 </div>
 
-                <div className="pt-2 border-t border-stone-200/60 dark:border-stone-800 flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                      Pitch Transpose
-                    </span>
-                    {pitchShift !== 0 && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                        {pitchShift * 100 > 0 ? `+${pitchShift * 100}¢` : `${pitchShift * 100}¢`}
+                {/* Pitch Transpose Section */}
+                <div className="pt-2 border-t border-stone-200/60 dark:border-stone-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+                        Pitch Transpose
                       </span>
-                    )}
+                      {pitchShift !== 0 && (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                          {pitchShift * 100 > 0 ? `+${pitchShift * 100}¢` : `${pitchShift * 100}¢`}
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                      {pitchShift === 0 ? 'Original Key' : `${pitchShift > 0 ? `+${pitchShift}` : pitchShift} semitones`}
+                    </span>
                   </div>
-                  <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                    {pitchShift === 0 ? 'Original Key' : `${pitchShift > 0 ? `+${pitchShift}` : pitchShift} semitones`}
-                  </span>
-                </div>
-                <div className="grid grid-cols-5 gap-1 text-xs font-mono font-bold">
-                  <button
-                    onClick={() => handlePitchChange(pitchShift - 2)}
-                    className="py-1 px-1.5 bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 rounded border border-stone-200 dark:border-stone-700 transition-all text-center"
-                    title="Transpose down whole step (-2 semitones)"
-                  >
-                    -2
-                  </button>
-                  <button
-                    onClick={() => handlePitchChange(pitchShift - 1)}
-                    className="py-1 px-1.5 bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 rounded border border-stone-200 dark:border-stone-700 transition-all text-center"
-                    title="Transpose down half step (-1 semitone)"
-                  >
-                    -1
-                  </button>
-                  <button
-                    onClick={() => handlePitchChange(0)}
-                    className={`py-1 px-1.5 rounded border transition-all text-center ${
-                      pitchShift === 0
-                        ? 'bg-stone-200 dark:bg-stone-700 text-stone-800 dark:text-stone-200 border-stone-300'
-                        : 'bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 border-stone-200 dark:border-stone-700'
-                    }`}
-                    title="Reset to original key"
-                  >
-                    0
-                  </button>
-                  <button
-                    onClick={() => handlePitchChange(pitchShift + 1)}
-                    className="py-1 px-1.5 bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 rounded border border-stone-200 dark:border-stone-700 transition-all text-center"
-                    title="Transpose up half step (+1 semitone)"
-                  >
-                    +1
-                  </button>
-                  <button
-                    onClick={() => handlePitchChange(pitchShift + 2)}
-                    className="py-1 px-1.5 bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 rounded border border-stone-200 dark:border-stone-700 transition-all text-center"
-                    title="Transpose up whole step (+2 semitones)"
-                  >
-                    +2
-                  </button>
+
+                  {/* Transpose Slider */}
+                  <input
+                    type="range"
+                    min="-12"
+                    max="12"
+                    step="1"
+                    value={pitchShift}
+                    onChange={(e) => handlePitchChange(Number(e.target.value))}
+                    className="w-full h-1.5 bg-stone-200 dark:bg-stone-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                  />
+
+                  {/* Quick Transpose Semitone Buttons */}
+                  <div className="grid grid-cols-7 gap-1 text-[11px] font-mono font-bold pt-1">
+                    {[-3, -2, -1, 0, 1, 2, 3].map((val) => {
+                      const label = val > 0 ? `+${val}` : `${val}`;
+                      const isActive = pitchShift === val;
+                      return (
+                        <button
+                          key={val}
+                          onClick={() => handlePitchChange(val)}
+                          className={`py-1 rounded border text-center transition-all ${
+                            isActive
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                              : 'bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300'
+                          }`}
+                          title={
+                            val === 0
+                              ? 'Reset to original key (0 semitones)'
+                              : `Transpose to ${label} semitone${Math.abs(val) === 1 ? '' : 's'}`
+                          }
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Stepper & Octave Jump Row */}
+                  <div className="flex items-center justify-between text-[10px] font-mono text-stone-500 pt-1">
+                    <button
+                      onClick={() => handlePitchChange(-12)}
+                      className="px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700"
+                      title="Octave Down (-12 semitones)"
+                    >
+                      -1 Octave
+                    </button>
+                    <button
+                      onClick={() => handlePitchChange(pitchShift - 1)}
+                      className="px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 flex items-center gap-0.5"
+                      title="Nudge 1 semitone down"
+                    >
+                      <ArrowDown className="w-2.5 h-2.5" />
+                      <span>Step</span>
+                    </button>
+                    <button
+                      onClick={() => handlePitchChange(pitchShift + 1)}
+                      className="px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 flex items-center gap-0.5"
+                      title="Nudge 1 semitone up"
+                    >
+                      <ArrowUp className="w-2.5 h-2.5" />
+                      <span>Step</span>
+                    </button>
+                    <button
+                      onClick={() => handlePitchChange(12)}
+                      className="px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700"
+                      title="Octave Up (+12 semitones)"
+                    >
+                      +1 Octave
+                    </button>
+                  </div>
                 </div>
               </div>
 
