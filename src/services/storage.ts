@@ -96,12 +96,7 @@ class StorageService {
 
   // Preferences
   public getPreferences(): UserPreferences {
-    const prefs = this.getItem(STORAGE_KEYS.PREFERENCES, INITIAL_PREFERENCES);
-    if (!prefs.teacherName || prefs.teacherName === 'Christian Vance') {
-      prefs.teacherName = 'Christian Arthur';
-      this.setItem(STORAGE_KEYS.PREFERENCES, prefs);
-    }
-    return prefs;
+    return this.getItem(STORAGE_KEYS.PREFERENCES, INITIAL_PREFERENCES);
   }
 
   public updatePreferences(updates: Partial<UserPreferences>): UserPreferences {

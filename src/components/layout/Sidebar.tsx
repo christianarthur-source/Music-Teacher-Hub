@@ -99,7 +99,7 @@ export const Sidebar: React.FC = () => {
         <Logo
           collapsed={isSidebarCollapsed}
           appName={preferences.appName}
-          teacherName={preferences.teacherName || 'Christian Arthur'}
+          teacherName={preferences.teacherName || 'Music Teacher'}
         />
       </div>
 

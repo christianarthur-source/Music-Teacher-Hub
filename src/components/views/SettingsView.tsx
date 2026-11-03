@@ -131,7 +131,7 @@ export const SettingsView: React.FC = () => {
               type="text"
               value={teacherName}
               onChange={(e) => setTeacherName(e.target.value)}
-              placeholder="e.g. Christian Arthur"
+              placeholder="Your name"
               className="w-full text-xs sm:text-sm px-3.5 py-2.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl"
               required
             />
@@ -145,7 +145,7 @@ export const SettingsView: React.FC = () => {
               type="text"
               value={schoolName}
               onChange={(e) => setSchoolName(e.target.value)}
-              placeholder="e.g. Lincoln Elementary School"
+              placeholder="Your school"
               className="w-full text-xs sm:text-sm px-3.5 py-2.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl"
             />
           </div>
@@ -252,7 +252,7 @@ export const SettingsView: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {[
               { id: 'builtin', name: 'Built-in Pedagogical AI', desc: 'Instant & Offline (No key needed)', badge: 'Free & Local' },
-              { id: 'claude', name: 'Anthropic Claude', desc: 'Claude 3.5 Haiku / Sonnet', badge: 'API Key' },
+              { id: 'claude', name: 'Anthropic Claude', desc: 'Claude Haiku 5.5', badge: 'API Key' },
               { id: 'gemini', name: 'Google Gemini', desc: 'Gemini 2.0 / 1.5 Flash', badge: 'API Key' }
             ].map((p) => (
               <button
@@ -283,7 +283,7 @@ export const SettingsView: React.FC = () => {
         <div className="pt-2 space-y-1.5">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold uppercase text-stone-400 block">
-              Anthropic Claude API Key (for Claude 3.5)
+              Anthropic Claude API Key (for Claude Haiku 5.5)
             </label>
             <a
               href="https://console.anthropic.com/settings/keys"

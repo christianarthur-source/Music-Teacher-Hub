@@ -48,7 +48,7 @@ export const JournalView: React.FC = () => {
   const [mood, setMood] = useState<JournalEntry['mood']>('great');
   const [energyLevel, setEnergyLevel] = useState<JournalEntry['energyLevel']>(4);
   const [weather, setWeather] = useState<JournalEntry['weather']>('sunny');
-  const [location, setLocation] = useState('Room 104 (Music Classroom)');
+  const [location, setLocation] = useState('');
   const [photoUrl, setPhotoUrl] = useState<string | undefined>(undefined);
   const [starred, setStarred] = useState(false);
   const [tagsStr, setTagsStr] = useState('reflection, general-music');

@@ -92,12 +92,14 @@ export const HomeDashboardView: React.FC = () => {
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white/90 text-xs font-semibold backdrop-blur border border-white/10">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>{preferences.schoolName} • {preferences.roomNumber}</span>
-            </div>
+            {(preferences.schoolName || preferences.roomNumber) && (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white/90 text-xs font-semibold backdrop-blur border border-white/10">
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>{[preferences.schoolName, preferences.roomNumber].filter(Boolean).join(' • ')}</span>
+              </div>
+            )}
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight flex items-center gap-2">
-              <span>Good day, {preferences.teacherName || 'Christian Arthur'}</span>
+              <span>Good day{preferences.teacherName ? `, ${preferences.teacherName}` : ''}</span>
               <span className="text-amber-400">♫</span>
             </h1>
             <p className="text-stone-300 text-xs sm:text-sm max-w-xl leading-relaxed">

@@ -40,20 +40,26 @@ export const Header: React.FC = () => {
           <Logo
             compact
             appName={preferences.appName}
-            teacherName={preferences.teacherName || 'Christian Arthur'}
+            teacherName={preferences.teacherName || 'Music Teacher'}
           />
         </div>
 
         {/* Desktop School & Room info with fun music badge */}
         <div className="hidden lg:flex items-center gap-2.5">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200/60 dark:border-stone-700/60">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            {preferences.schoolName}
-          </span>
-          <span className="text-xs text-stone-300 dark:text-stone-600">•</span>
-          <span className="text-xs text-stone-500 dark:text-stone-400 font-medium">
-            {preferences.roomNumber}
-          </span>
+          {preferences.schoolName && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200/60 dark:border-stone-700/60">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              {preferences.schoolName}
+            </span>
+          )}
+          {preferences.schoolName && preferences.roomNumber && (
+            <span className="text-xs text-stone-300 dark:text-stone-600">•</span>
+          )}
+          {preferences.roomNumber && (
+            <span className="text-xs text-stone-500 dark:text-stone-400 font-medium">
+              {preferences.roomNumber}
+            </span>
+          )}
         </div>
       </div>
 

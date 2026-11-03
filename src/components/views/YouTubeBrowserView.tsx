@@ -125,9 +125,9 @@ export const YouTubeBrowserView: React.FC = () => {
   const [videos, setVideos] = useState<YouTubeVideoItem[]>(() => {
     try {
       const stored = localStorage.getItem('mth_youtube_videos');
-      return stored ? JSON.parse(stored) : DEFAULT_VIDEOS;
+      return stored ? JSON.parse(stored) : [];
     } catch {
-      return DEFAULT_VIDEOS;
+      return [];
     }
   });
 
@@ -193,7 +193,7 @@ export const YouTubeBrowserView: React.FC = () => {
     setHasSearched(true);
 
     try {
-      const res = await fetch(`/api/youtube-search?q=${encodeURIComponent(query.trim())}`);
+      const res = await fetch(`/api/hub/youtube-search?q=${encodeURIComponent(query.trim())}`);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -226,7 +226,7 @@ export const YouTubeBrowserView: React.FC = () => {
           views: 'Classroom Tested'
         }))
       );
-      showToast('Loaded classroom video recommendations', 'info');
+      showToast('Live YouTube search is unavailable right now. Showing classroom picks instead.', 'info');
     } finally {
       setIsSearching(false);
     }

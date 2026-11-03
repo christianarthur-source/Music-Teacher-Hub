@@ -13,7 +13,7 @@ interface LogoProps {
 export const Logo: React.FC<LogoProps> = ({
   collapsed = false,
   compact = false,
-  teacherName = 'Christian Arthur',
+  teacherName = 'Music Teacher',
   appName = 'Music Teacher Hub',
   className = ''
 }) => {
