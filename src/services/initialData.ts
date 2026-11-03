@@ -17,24 +17,23 @@ import {
 
 export const INITIAL_PREFERENCES: UserPreferences = {
   appName: 'Music Teacher Hub',
-  teacherName: 'Christian Vance',
+  teacherName: 'Christian Arthur',
   schoolName: 'Lincoln Elementary School',
-  roomNumber: 'Room 104 (Music & Chorus)',
+  roomNumber: 'Room 104 (Music Room)',
   darkMode: false,
   accentColor: 'blue',
   defaultClassDuration: 40,
   metronomeSound: 'woodblock',
   tunerRefA4: 440,
   googleCalendarConnected: false,
-  pinnedNavigation: ['home', 'planner', 'tasks', 'tools', 'chorus', 'visuals']
+  pinnedNavigation: ['home', 'planner', 'tasks', 'tools', 'visuals', 'audio-studio']
 };
 
 export const INITIAL_AREAS: Area[] = [
   { id: 'area-genmus', name: 'General Music (K–6)', icon: 'Music', color: '#0c87eb' },
-  { id: 'area-chorus', name: '6th-Grade Chorus', icon: 'Users', color: '#be123c' },
-  { id: 'area-concerts', name: 'Concerts & Assemblies', icon: 'Sparkles', color: '#d97706' },
+  { id: 'area-concerts', name: 'Concerts & School Programs', icon: 'Sparkles', color: '#d97706' },
   { id: 'area-curriculum', name: 'Curriculum & NYS Standards', icon: 'BookOpen', color: '#059669' },
-  { id: 'area-cart', name: 'Music Cart & Instruments', icon: 'Boxes', color: '#7c3aed' },
+  { id: 'area-resources', name: 'Music Tech & Audio Studio', icon: 'Sliders', color: '#7c3aed' },
   { id: 'area-admin', name: 'School Admin & Parents', icon: 'FileText', color: '#475569' },
 ];
 

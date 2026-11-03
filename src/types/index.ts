@@ -197,6 +197,11 @@ export interface JournalEntry {
   tags: string[];
   mood: 'great' | 'good' | 'neutral' | 'challenging' | 'exhausting';
   energyLevel: 1 | 2 | 3 | 4 | 5;
+  weather?: 'sunny' | 'cloudy' | 'rainy' | 'snowy' | 'indoor_recess';
+  location?: string;
+  gradeLevel?: GradeLevel;
+  photoUrl?: string; // base64 or object URL for photo attachment
+  starred?: boolean;
   templateType?: 'daily_reflection' | 'what_worked' | 'reuse_next_year' | 'chorus_notes' | 'concert_debrief' | 'sub_plan';
   pinned?: boolean;
 }
@@ -229,6 +234,7 @@ export interface AudioPracticeTrack {
   id: string;
   title: string;
   fileName: string;
+  artist?: string;
   blobUrl?: string;
   duration: number;
   markers: {
@@ -241,6 +247,19 @@ export interface AudioPracticeTrack {
   loopB?: number;
   playbackSpeed: number; // 0.5 to 1.5
   pitchShiftSemitones: number; // -12 to +12
+  isBuiltin?: boolean;
+}
+
+export interface SongMakerPattern {
+  id: string;
+  title: string;
+  tempo: number;
+  steps: number; // 16
+  melodyInstrument: 'xylophone' | 'piano' | 'synth' | 'marimba';
+  drumInstrument: 'acoustic' | 'electronic' | 'orff';
+  melodyPitches: string[]; // ['C5', 'B4', 'A4', 'G4', 'F4', 'E4', 'D4', 'C4']
+  melodyGrid: boolean[][]; // [pitchIndex][stepIndex]
+  drumGrid: boolean[][]; // [0=Kick, 1=Snare/Woodblock, 2=HiHat/Triangle][stepIndex]
 }
 
 export interface BeatPattern {

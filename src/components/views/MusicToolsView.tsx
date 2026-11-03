@@ -1,32 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { tunerEngine, TUNER_PRESETS, PitchData } from '../../services/tunerAudio';
 import { audioEngine } from '../../services/audioEngine';
-import { storage } from '../../services/storage';
-import { BeatPattern } from '../../types';
+import { SongMakerSequencer } from './SongMakerSequencer';
 import {
   Mic,
   MicOff,
-  Sliders,
   Play,
   Pause,
-  RotateCcw,
-  Volume2,
-  VolumeX,
+  Sliders,
   Sparkles,
-  Maximize2,
-  CheckCircle,
-  HelpCircle,
-  Download,
-  Plus,
-  RefreshCw,
   Music2,
-  Music
+  Clock
 } from 'lucide-react';
 
 export const MusicToolsView: React.FC = () => {
   const { preferences, showToast } = useApp();
-  const [activeTab, setActiveTab] = useState<'tuner' | 'metronome' | 'beat-machine'>('tuner');
+  const [activeTab, setActiveTab] = useState<'song-maker' | 'tuner' | 'metronome'>('song-maker');
 
   // --- TUNER STATE ---
   const [isTunerListening, setIsTunerListening] = useState(false);
@@ -70,9 +60,7 @@ export const MusicToolsView: React.FC = () => {
   const [soundScheme, setSoundScheme] = useState<'woodblock' | 'beep' | 'drum' | 'cowbell'>('woodblock');
   const [isMetronomePlaying, setIsMetronomePlaying] = useState(false);
   const [activeBeat, setActiveBeat] = useState<number>(1);
-  const [isSubPulse, setIsSubPulse] = useState(false);
   const [tapTimes, setTapTimes] = useState<number[]>([]);
-  const [isMetronomeFullscreen, setIsMetronomeFullscreen] = useState(false);
 
   useEffect(() => {
     audioEngine.setMetronomeParams({
@@ -88,9 +76,8 @@ export const MusicToolsView: React.FC = () => {
       audioEngine.stopMetronome();
       setIsMetronomePlaying(false);
     } else {
-      audioEngine.startMetronome((beat, isSub) => {
+      audioEngine.startMetronome((beat) => {
         setActiveBeat(beat);
-        setIsSubPulse(isSub);
       });
       setIsMetronomePlaying(true);
     }
@@ -114,120 +101,19 @@ export const MusicToolsView: React.FC = () => {
     }
   };
 
-  // Keyboard shortcut listener for spacebar play/pause
+  // Keyboard shortcut listener for spacebar play/pause in metronome
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && (e.target as HTMLElement).tagName !== 'INPUT' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
         if (activeTab === 'metronome') {
           e.preventDefault();
           toggleMetronome();
-        } else if (activeTab === 'beat-machine') {
-          e.preventDefault();
-          toggleBeatMachine();
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  });
-
-  // --- BEAT MACHINE STATE ---
-  const [beatPatterns, setBeatPatterns] = useState<BeatPattern[]>(storage.getBeatPatterns());
-  const [activePatternIndex, setActivePatternIndex] = useState(0);
-  const [isBeatPlaying, setIsBeatPlaying] = useState(false);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [beatBpm, setBeatBpm] = useState(108);
-  const [swing, setSwing] = useState(0);
-
-  const currentPattern = beatPatterns[activePatternIndex] || beatPatterns[0];
-
-  const toggleGridStep = (trackIdx: number, stepIdx: number) => {
-    const updated = { ...currentPattern };
-    updated.tracks[trackIdx].grid[stepIdx] = !updated.tracks[trackIdx].grid[stepIdx];
-    const newPatterns = [...beatPatterns];
-    newPatterns[activePatternIndex] = updated;
-    setBeatPatterns(newPatterns);
-    storage.saveBeatPatterns(newPatterns);
-  };
-
-  const toggleTrackMute = (trackIdx: number) => {
-    const updated = { ...currentPattern };
-    updated.tracks[trackIdx].muted = !updated.tracks[trackIdx].muted;
-    const newPatterns = [...beatPatterns];
-    newPatterns[activePatternIndex] = updated;
-    setBeatPatterns(newPatterns);
-  };
-
-  const beatTimerRef = useRef<number | null>(null);
-
-  const toggleBeatMachine = () => {
-    if (isBeatPlaying) {
-      if (beatTimerRef.current !== null) {
-        clearInterval(beatTimerRef.current);
-        beatTimerRef.current = null;
-      }
-      setIsBeatPlaying(false);
-      setCurrentStep(0);
-    } else {
-      audioEngine.unlockAudio();
-      setIsBeatPlaying(true);
-    }
-  };
-
-  useEffect(() => {
-    if (isBeatPlaying) {
-      // 16th note interval = (60 / beatBpm) / 4 * 1000 ms
-      const intervalMs = (60.0 / beatBpm / 4.0) * 1000;
-      let step = 0;
-
-      beatTimerRef.current = window.setInterval(() => {
-        // Trigger sounds for this step
-        currentPattern.tracks.forEach((track) => {
-          if (!track.muted && track.grid[step]) {
-            switch (track.sound) {
-              case 'kick':
-                audioEngine.playKick(0, track.volume);
-                break;
-              case 'snare':
-                audioEngine.playSnare(0, track.volume);
-                break;
-              case 'hihat_c':
-                audioEngine.playClosedHiHat(0, track.volume);
-                break;
-              case 'hihat_o':
-                audioEngine.playOpenHiHat(0, track.volume);
-                break;
-              case 'clap':
-                audioEngine.playClap(0, track.volume);
-                break;
-              case 'woodblock':
-                audioEngine.playWoodblock(0, false, track.volume);
-                break;
-              case 'cowbell':
-                audioEngine.playCowbell(0, false, track.volume);
-                break;
-              case 'triangle':
-                audioEngine.playTriangle(0, track.volume);
-                break;
-              case 'agogo':
-                audioEngine.playAgogo(0, false, track.volume);
-                break;
-            }
-          }
-        });
-
-        setCurrentStep(step);
-        step = (step + 1) % currentPattern.steps;
-      }, intervalMs);
-    }
-
-    return () => {
-      if (beatTimerRef.current !== null) {
-        clearInterval(beatTimerRef.current);
-        beatTimerRef.current = null;
-      }
-    };
-  }, [isBeatPlaying, beatBpm, currentPattern]);
+  }, [activeTab, isMetronomePlaying]);
 
   const preset = TUNER_PRESETS[selectedPresetIndex];
 
@@ -237,64 +123,74 @@ export const MusicToolsView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-200 dark:border-stone-800">
         <div>
           <h1 className="text-2xl font-extrabold text-stone-900 dark:text-white flex items-center gap-2.5">
-            <Music2 className="w-6 h-6 text-brand-600" />
-            <span>Music Tools Workstation</span>
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-rose-500 flex items-center justify-center text-white shadow-md">
+              <Music2 className="w-5 h-5" />
+            </div>
+            <span>Music Classroom Tools</span>
           </h1>
-          <p className="text-xs sm:text-sm text-stone-500 dark:text-stone-400 mt-0.5">
-            Real-time chromatic tuner, high-precision Web Audio metronome, and classroom beat laboratory.
+          <p className="text-xs sm:text-sm text-stone-500 dark:text-stone-400 mt-1">
+            Google Song Maker sequencer, real-time chromatic tuner, and high-precision metronome.
           </p>
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex p-1 rounded-2xl bg-stone-100 dark:bg-stone-800/80 border border-stone-200/60 dark:border-stone-700/60">
+        <div className="flex p-1.5 rounded-2xl bg-stone-100 dark:bg-stone-800/80 border border-stone-200/80 dark:border-stone-700/80 gap-1 shadow-inner">
+          <button
+            onClick={() => {
+              setActiveTab('song-maker');
+              if (tunerEngine.isRunning()) tunerEngine.stop();
+              setIsTunerListening(false);
+              if (isMetronomePlaying) audioEngine.stopMetronome();
+              setIsMetronomePlaying(false);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+              activeTab === 'song-maker'
+                ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-md'
+                : 'text-stone-600 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Song Maker Sequencer</span>
+          </button>
+
           <button
             onClick={() => {
               setActiveTab('tuner');
               if (isMetronomePlaying) audioEngine.stopMetronome();
               setIsMetronomePlaying(false);
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
               activeTab === 'tuner'
                 ? 'bg-white dark:bg-stone-900 text-brand-600 dark:text-brand-400 shadow-sm'
-                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
+                : 'text-stone-600 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white'
             }`}
           >
-            Chromatic Tuner
+            <Mic className="w-3.5 h-3.5" />
+            <span>Chromatic Tuner</span>
           </button>
+
           <button
             onClick={() => {
               setActiveTab('metronome');
               if (tunerEngine.isRunning()) tunerEngine.stop();
               setIsTunerListening(false);
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
               activeTab === 'metronome'
                 ? 'bg-white dark:bg-stone-900 text-brand-600 dark:text-brand-400 shadow-sm'
-                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
+                : 'text-stone-600 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white'
             }`}
           >
-            Precision Metronome
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab('beat-machine');
-              if (tunerEngine.isRunning()) tunerEngine.stop();
-              setIsTunerListening(false);
-              if (isMetronomePlaying) audioEngine.stopMetronome();
-              setIsMetronomePlaying(false);
-            }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeTab === 'beat-machine'
-                ? 'bg-white dark:bg-stone-900 text-brand-600 dark:text-brand-400 shadow-sm'
-                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
-            }`}
-          >
-            Beat Machine & Rhythm Lab
+            <Clock className="w-3.5 h-3.5" />
+            <span>Precision Metronome</span>
           </button>
         </div>
       </div>
 
-      {/* 1. CHROMATIC TUNER TAB */}
+      {/* 1. SONG MAKER SEQUENCER TAB */}
+      {activeTab === 'song-maker' && <SongMakerSequencer />}
+
+      {/* 2. CHROMATIC TUNER TAB */}
       {activeTab === 'tuner' && (
         <div className="space-y-6">
           <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-10 shadow-card border border-stone-200/80 dark:border-stone-800 flex flex-col items-center text-center space-y-6">
@@ -330,7 +226,7 @@ export const MusicToolsView: React.FC = () => {
               </div>
             </div>
 
-            {/* Target Instrument Notes (if selected preset has specific notes like Ukulele/Guitar) */}
+            {/* Target Instrument Notes (if preset has specific notes like Ukulele/Guitar) */}
             {preset.notes.length > 0 && (
               <div className="flex flex-wrap items-center justify-center gap-2">
                 {preset.notes.map((n, i) => {
@@ -340,7 +236,7 @@ export const MusicToolsView: React.FC = () => {
                       key={i}
                       className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all ${
                         isCurrentNote
-                          ? 'bg-emerald-500 text-white ring-4 ring-emerald-500/20 scale-105'
+                          ? 'bg-emerald-500 text-white ring-4 ring-emerald-500/20 scale-105 shadow-md'
                           : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300'
                       }`}
                     >
@@ -438,7 +334,7 @@ export const MusicToolsView: React.FC = () => {
         </div>
       )}
 
-      {/* 2. PRECISION METRONOME TAB */}
+      {/* 3. PRECISION METRONOME TAB */}
       {activeTab === 'metronome' && (
         <div className="space-y-6">
           <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-10 shadow-card border border-stone-200/80 dark:border-stone-800 flex flex-col items-center text-center space-y-8">
@@ -452,12 +348,12 @@ export const MusicToolsView: React.FC = () => {
                 return (
                   <div
                     key={idx}
-                    className={`rounded-full transition-all duration-75 flex items-center justify-center font-mono font-bold text-xs ${
+                    className={`rounded-2xl transition-all duration-75 flex items-center justify-center font-mono font-bold text-sm ${
                       isCurrent
                         ? isDownbeat
-                          ? 'w-14 h-14 bg-brand-600 text-white ring-8 ring-brand-500/30 scale-110 shadow-lg'
+                          ? 'w-14 h-14 bg-gradient-to-tr from-amber-500 to-rose-500 text-white ring-8 ring-amber-500/30 scale-110 shadow-lg'
                           : 'w-12 h-12 bg-amber-500 text-white ring-6 ring-amber-500/20 scale-105 shadow-md'
-                        : 'w-10 h-10 bg-stone-100 dark:bg-stone-800 text-stone-400'
+                        : 'w-11 h-11 bg-stone-100 dark:bg-stone-800 text-stone-400'
                     }`}
                   >
                     {beatNum}
@@ -484,37 +380,37 @@ export const MusicToolsView: React.FC = () => {
                 max="260"
                 value={bpm}
                 onChange={(e) => setBpm(Number(e.target.value))}
-                className="w-full h-2 bg-stone-200 dark:bg-stone-700 rounded-lg appearance-none cursor-pointer accent-brand-600"
+                className="w-full h-2.5 bg-stone-200 dark:bg-stone-700 rounded-lg appearance-none cursor-pointer accent-brand-600"
               />
 
               <div className="flex items-center justify-center gap-2">
                 <button
                   onClick={() => setBpm((b) => Math.max(30, b - 5))}
-                  className="px-3 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 font-bold text-xs hover:bg-stone-200"
+                  className="px-3 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 font-bold text-xs hover:bg-stone-200 dark:hover:bg-stone-700"
                 >
                   -5
                 </button>
                 <button
                   onClick={() => setBpm((b) => Math.max(30, b - 1))}
-                  className="px-3 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 font-bold text-xs hover:bg-stone-200"
+                  className="px-3 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 font-bold text-xs hover:bg-stone-200 dark:hover:bg-stone-700"
                 >
                   -1
                 </button>
                 <button
                   onClick={handleTapTempo}
-                  className="px-5 py-2 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-bold text-xs hover:bg-amber-200 transition-all border border-amber-300/60"
+                  className="px-5 py-2 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-bold text-xs hover:bg-amber-200 transition-all border border-amber-300/60 shadow-sm"
                 >
                   Tap Tempo
                 </button>
                 <button
                   onClick={() => setBpm((b) => Math.min(300, b + 1))}
-                  className="px-3 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 font-bold text-xs hover:bg-stone-200"
+                  className="px-3 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 font-bold text-xs hover:bg-stone-200 dark:hover:bg-stone-700"
                 >
                   +1
                 </button>
                 <button
                   onClick={() => setBpm((b) => Math.min(300, b + 5))}
-                  className="px-3 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 font-bold text-xs hover:bg-stone-200"
+                  className="px-3 py-1.5 rounded-xl bg-stone-100 dark:bg-stone-800 font-bold text-xs hover:bg-stone-200 dark:hover:bg-stone-700"
                 >
                   +5
                 </button>
@@ -529,7 +425,7 @@ export const MusicToolsView: React.FC = () => {
                   <button
                     key={num}
                     onClick={() => setBeatsPerBar(num)}
-                    className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
                       beatsPerBar === num
                         ? 'bg-brand-600 text-white'
                         : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400'
@@ -546,7 +442,7 @@ export const MusicToolsView: React.FC = () => {
                   <button
                     key={sub}
                     onClick={() => setSubdivision(sub)}
-                    className={`px-2.5 py-1 rounded-lg font-medium capitalize transition-all ${
+                    className={`px-2.5 py-1.5 rounded-lg font-medium capitalize transition-all ${
                       subdivision === sub
                         ? 'bg-brand-600 text-white font-bold'
                         : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400'
@@ -562,7 +458,7 @@ export const MusicToolsView: React.FC = () => {
                 <select
                   value={soundScheme}
                   onChange={(e) => setSoundScheme(e.target.value as any)}
-                  className="bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-stone-200 rounded-lg px-2.5 py-1 text-xs"
+                  className="bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-stone-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold border border-stone-200 dark:border-stone-700"
                 >
                   <option value="woodblock">Woodblock (Orff Click)</option>
                   <option value="beep">Digital Beep</option>
@@ -584,129 +480,6 @@ export const MusicToolsView: React.FC = () => {
               {isMetronomePlaying ? <Pause className="w-6 h-6 fill-white" /> : <Play className="w-6 h-6 fill-white ml-0.5" />}
               <span>{isMetronomePlaying ? 'Pause Metronome' : 'Start Metronome'}</span>
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* 3. BEAT MACHINE & RHYTHM LAB TAB */}
-      {activeTab === 'beat-machine' && (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 shadow-card border border-stone-200/80 dark:border-stone-800 space-y-6">
-            {/* Beat Machine Header & Pattern Switcher */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-stone-100 dark:border-stone-800">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={toggleBeatMachine}
-                  className={`p-3 rounded-2xl font-bold text-white shadow-sm transition-all active:scale-95 ${
-                    isBeatPlaying ? 'bg-amber-500 hover:bg-amber-600' : 'bg-brand-600 hover:bg-brand-700'
-                  }`}
-                  title={isBeatPlaying ? 'Stop Pattern' : 'Play Pattern'}
-                >
-                  {isBeatPlaying ? <Pause className="w-5 h-5 fill-white" /> : <Play className="w-5 h-5 fill-white ml-0.5" />}
-                </button>
-                <div>
-                  <h3 className="font-bold text-stone-900 dark:text-white text-base">
-                    {currentPattern.title}
-                  </h3>
-                  <p className="text-xs text-stone-400">16-Step Grid Sequencer</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <select
-                  value={activePatternIndex}
-                  onChange={(e) => {
-                    setActivePatternIndex(Number(e.target.value));
-                    setBeatBpm(beatPatterns[Number(e.target.value)].tempo);
-                  }}
-                  className="bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-stone-200 text-xs font-semibold px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700"
-                >
-                  {beatPatterns.map((p, idx) => (
-                    <option key={p.id} value={idx}>
-                      {p.title}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="flex items-center gap-1.5 font-mono text-xs">
-                  <span className="text-stone-400">Tempo:</span>
-                  <input
-                    type="number"
-                    value={beatBpm}
-                    onChange={(e) => setBeatBpm(Number(e.target.value))}
-                    className="w-16 px-2 py-1 bg-stone-100 dark:bg-stone-800 rounded-lg text-center font-bold"
-                  />
-                  <span className="text-stone-400">BPM</span>
-                </div>
-              </div>
-            </div>
-
-            {/* 16-Step Interactive Grid */}
-            <div className="overflow-x-auto pb-2">
-              <div className="min-w-[650px] space-y-2">
-                {/* Step Beat Headers */}
-                <div className="grid grid-cols-16 gap-1.5 pl-36 pr-2 mb-2 text-center text-[10px] font-mono text-stone-400">
-                  {Array.from({ length: 16 }).map((_, stepIdx) => (
-                    <div
-                      key={stepIdx}
-                      className={`py-1 rounded ${
-                        stepIdx % 4 === 0 ? 'font-bold text-brand-600 dark:text-brand-400' : ''
-                      } ${currentStep === stepIdx && isBeatPlaying ? 'bg-brand-500/20 text-brand-500' : ''}`}
-                    >
-                      {stepIdx % 4 === 0 ? Math.floor(stepIdx / 4) + 1 : '•'}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Track Rows */}
-                {currentPattern.tracks.map((track, trackIdx) => (
-                  <div key={trackIdx} className="flex items-center gap-2">
-                    {/* Track info & mute */}
-                    <div className="w-32 flex items-center justify-between pr-2">
-                      <span className="text-xs font-semibold text-stone-800 dark:text-stone-200 truncate">
-                        {track.name}
-                      </span>
-                      <button
-                        onClick={() => toggleTrackMute(trackIdx)}
-                        className={`p-1 rounded text-xs ${
-                          track.muted ? 'text-rose-500 bg-rose-50 dark:bg-rose-950/40' : 'text-stone-400 hover:text-stone-600'
-                        }`}
-                        title={track.muted ? 'Unmute' : 'Mute'}
-                      >
-                        {track.muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-
-                    {/* Step buttons */}
-                    <div className="grid grid-cols-16 gap-1.5 flex-1">
-                      {track.grid.map((isActive, stepIdx) => {
-                        const isPlayhead = isBeatPlaying && currentStep === stepIdx;
-                        const isBeatQuarter = stepIdx % 4 === 0;
-
-                        return (
-                          <button
-                            key={stepIdx}
-                            onClick={() => toggleGridStep(trackIdx, stepIdx)}
-                            className={`h-9 rounded-xl transition-all duration-75 ${
-                              isActive
-                                ? 'bg-brand-600 hover:bg-brand-500 shadow-sm text-white'
-                                : isBeatQuarter
-                                ? 'bg-stone-200/80 dark:bg-stone-800 hover:bg-stone-300'
-                                : 'bg-stone-100 dark:bg-stone-800/50 hover:bg-stone-200'
-                            } ${isPlayhead ? 'ring-2 ring-amber-400 scale-105' : ''}`}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/50 text-xs text-stone-500 flex flex-wrap items-center justify-between gap-3">
-              <span>Classroom tip: Use steady beat presets for Kindergarten, and Son Clave 3-2 for 5th grade syncopation lessons.</span>
-              <span className="font-mono">Press Spacebar to play/pause</span>
-            </div>
           </div>
         </div>
       )}

@@ -71,7 +71,7 @@ export const SettingsView: React.FC = () => {
   };
 
   const handleResetDefaults = () => {
-    if (confirm('Reset all data to default elementary curriculum & chorus sample data? This will overwrite local changes.')) {
+    if (confirm('Reset all data to default elementary music curriculum data? This will overwrite local changes.')) {
       storage.resetToDefaults();
       showToast('Reset to default demo data', 'info');
       window.location.reload();
@@ -121,7 +121,7 @@ export const SettingsView: React.FC = () => {
               type="text"
               value={teacherName}
               onChange={(e) => setTeacherName(e.target.value)}
-              placeholder="e.g. Christian Vance"
+              placeholder="e.g. Christian Arthur"
               className="w-full text-xs sm:text-sm px-3.5 py-2.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl"
               required
             />

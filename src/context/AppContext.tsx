@@ -9,13 +9,11 @@ export type NavView =
   | 'calendar'
   | 'tools'
   | 'audio-studio'
-  | 'chorus'
   | 'seating'
   | 'visuals'
   | 'timer'
   | 'resources'
   | 'journal'
-  | 'inventory'
   | 'youtube'
   | 'settings';
 
@@ -46,8 +44,45 @@ export interface AppContextType {
 const AppContext = createContext<AppContextType | null>(null);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const getInitialView = (): NavView => {
+    try {
+      const hash = window.location.hash.replace('#', '') as NavView;
+      const validViews: NavView[] = [
+        'home', 'planner', 'tasks', 'calendar', 'tools', 'audio-studio',
+        'seating', 'visuals', 'timer', 'resources', 'journal', 'youtube', 'settings'
+      ];
+      if (validViews.includes(hash)) return hash;
+      const params = new URLSearchParams(window.location.search);
+      const viewParam = params.get('view') as NavView;
+      if (validViews.includes(viewParam)) return viewParam;
+    } catch {}
+    return 'home';
+  };
+
   const [preferences, setPreferencesState] = useState<UserPreferences>(storage.getPreferences());
-  const [activeView, setActiveView] = useState<NavView>('home');
+  const [activeView, setActiveViewState] = useState<NavView>(getInitialView);
+
+  const setActiveView = (view: NavView) => {
+    setActiveViewState(view);
+    try {
+      window.location.hash = '#' + view;
+    } catch {}
+  };
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '') as NavView;
+      const validViews: NavView[] = [
+        'home', 'planner', 'tasks', 'calendar', 'tools', 'audio-studio',
+        'seating', 'visuals', 'timer', 'resources', 'journal', 'youtube', 'settings'
+      ];
+      if (validViews.includes(hash)) {
+        setActiveViewState(hash);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
   const [isTeachModeOpen, setIsTeachModeOpen] = useState<boolean>(false);
   const [teachModeLesson, setTeachModeLesson] = useState<LessonPlan | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState<boolean>(false);

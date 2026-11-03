@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { useClassroomTimer } from '../../context/TimerContext';
+import { Logo } from './Logo';
 import {
   Presentation,
   Search,
@@ -34,27 +35,21 @@ export const Header: React.FC = () => {
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 py-2.5 bg-white/90 dark:bg-stone-900/90 backdrop-blur-md border-b border-stone-200/80 dark:border-stone-800 transition-colors">
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 lg:hidden">
-          <div className="w-8 h-8 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-sm">
-            <Music className="w-4 h-4" />
-          </div>
-          <div>
-            <h1 className="font-semibold text-sm leading-tight text-stone-900 dark:text-white">
-              {preferences.appName}
-            </h1>
-            <p className="text-[11px] text-stone-500 dark:text-stone-400 leading-none">
-              {preferences.schoolName}
-            </p>
-          </div>
+      <div className="flex items-center gap-4">
+        <div className="lg:hidden">
+          <Logo
+            appName={preferences.appName}
+            teacherName={preferences.teacherName || 'Christian Arthur'}
+          />
         </div>
 
-        {/* Desktop School & Room info */}
-        <div className="hidden lg:flex items-center gap-2">
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300">
+        {/* Desktop School & Room info with fun music badge */}
+        <div className="hidden lg:flex items-center gap-2.5">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200/60 dark:border-stone-700/60">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             {preferences.schoolName}
           </span>
-          <span className="text-xs text-stone-400 dark:text-stone-500">•</span>
+          <span className="text-xs text-stone-300 dark:text-stone-600">•</span>
           <span className="text-xs text-stone-500 dark:text-stone-400 font-medium">
             {preferences.roomNumber}
           </span>

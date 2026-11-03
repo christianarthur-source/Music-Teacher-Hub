@@ -136,25 +136,25 @@ export const CommandPalette: React.FC = () => {
     },
     {
       id: 'nav-beat-machine',
-      title: 'Open Beat Machine & Rhythm Lab',
+      title: 'Open Song Maker & Sequencer',
       category: 'Navigation',
       icon: Music2,
       action: () => {
         setActiveView('tools');
         setIsCommandPaletteOpen(false);
       },
-      detail: '16-step grid sequencer'
+      detail: 'Google Song Maker style melody & drum grid'
     },
     {
-      id: 'nav-chorus',
-      title: 'Open 6th Grade Chorus Manager',
+      id: 'nav-audio-studio',
+      title: 'Open Audio Practice Lab & Playlist',
       category: 'Navigation',
-      icon: Users,
+      icon: Music2,
       action: () => {
-        setActiveView('chorus');
+        setActiveView('audio-studio');
         setIsCommandPaletteOpen(false);
       },
-      detail: 'Repertoire & concert program'
+      detail: 'Local audio files, speed & pitch stretch'
     },
     {
       id: 'nav-seating',
@@ -168,17 +168,6 @@ export const CommandPalette: React.FC = () => {
       detail: 'Semi-circles, rows, risers'
     },
     {
-      id: 'nav-inventory',
-      title: 'Open Music Cart & Instrument Inventory',
-      category: 'Navigation',
-      icon: Boxes,
-      action: () => {
-        setActiveView('inventory');
-        setIsCommandPaletteOpen(false);
-      },
-      detail: 'Orff, ukuleles, recorders'
-    },
-    {
       id: 'nav-journal',
       title: 'Open Daily Teaching Journal',
       category: 'Navigation',
@@ -187,7 +176,7 @@ export const CommandPalette: React.FC = () => {
         setActiveView('journal');
         setIsCommandPaletteOpen(false);
       },
-      detail: 'Daily reflections & what worked'
+      detail: 'Calendar view, timeline & prompts'
     },
 
     // Dynamic Lessons
@@ -202,19 +191,6 @@ export const CommandPalette: React.FC = () => {
         setIsCommandPaletteOpen(false);
       },
       detail: `${l.durationMinutes} min • ${l.musicalConcepts.slice(0, 2).join(', ')}`
-    })),
-
-    // Dynamic Chorus Songs
-    ...chorusSongs.map((s) => ({
-      id: `song-${s.id}`,
-      title: `Chorus: ${s.title} — ${s.composer}`,
-      category: 'Chorus' as const,
-      icon: Users,
-      action: () => {
-        setActiveView('chorus');
-        setIsCommandPaletteOpen(false);
-      },
-      detail: `${s.voicing} • Key of ${s.key} • ${s.tempoBpm} BPM`
     })),
 
     // Dynamic Resources

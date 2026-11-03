@@ -16,13 +16,11 @@ import { TasksView } from './components/views/TasksView';
 import { CalendarView } from './components/views/CalendarView';
 import { MusicToolsView } from './components/views/MusicToolsView';
 import { AudioStudioView } from './components/views/AudioStudioView';
-import { ChorusManagerView } from './components/views/ChorusManagerView';
 import { SeatingChartView } from './components/views/SeatingChartView';
 import { ClassroomVisualsView } from './components/views/ClassroomVisualsView';
 import { ClassroomTimerView } from './components/views/ClassroomTimerView';
 import { ResourceLibraryView } from './components/views/ResourceLibraryView';
 import { JournalView } from './components/views/JournalView';
-import { InventoryView } from './components/views/InventoryView';
 import { YouTubeBrowserView } from './components/views/YouTubeBrowserView';
 import { SettingsView } from './components/views/SettingsView';
 
@@ -43,8 +41,6 @@ const MainContent: React.FC = () => {
         return <MusicToolsView />;
       case 'audio-studio':
         return <AudioStudioView />;
-      case 'chorus':
-        return <ChorusManagerView />;
       case 'seating':
         return <SeatingChartView />;
       case 'visuals':
@@ -55,8 +51,6 @@ const MainContent: React.FC = () => {
         return <ResourceLibraryView />;
       case 'journal':
         return <JournalView />;
-      case 'inventory':
-        return <InventoryView />;
       case 'youtube':
         return <YouTubeBrowserView />;
       case 'settings':

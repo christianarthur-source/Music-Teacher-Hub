@@ -50,6 +50,9 @@ export default {
           900: 'var(--brand-900, #0b3d6f)',
         },
       },
+      gridTemplateColumns: {
+        '16': 'repeat(16, minmax(0, 1fr))',
+      },
       boxShadow: {
         'subtle': '0 1px 2px 0 rgba(0, 0, 0, 0.04)',
         'elevated': '0 4px 20px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04)',

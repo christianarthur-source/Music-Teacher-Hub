@@ -386,6 +386,98 @@ class AudioEngine {
     osc2.stop(now + durationSec + 0.05);
   }
 
+  // Google Song Maker style multi-instrument melodic synthesizer (Xylophone, Piano, Synth, Marimba)
+  public playMelodyNote(
+    noteName: string,
+    instrument: 'xylophone' | 'piano' | 'synth' | 'marimba' = 'xylophone',
+    time: number = 0,
+    volume: number = 0.75
+  ): void {
+    const ctx = this.getContext();
+    const playTime = time || ctx.currentTime;
+    const freq = this.noteNameToFrequency(noteName);
+
+    const osc1 = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    if (instrument === 'xylophone') {
+      // Crisp wooden mallet strike: sine + fast decaying high partials
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(freq, playTime);
+
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(freq * 3, playTime);
+
+      const gain2 = ctx.createGain();
+      gain2.gain.setValueAtTime(volume * 0.35, playTime);
+      gain2.gain.exponentialRampToValueAtTime(0.0001, playTime + 0.12);
+
+      gain.gain.setValueAtTime(0.0001, playTime);
+      gain.gain.linearRampToValueAtTime(volume, playTime + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, playTime + 0.45);
+
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(playTime);
+      osc2.stop(playTime + 0.15);
+    } else if (instrument === 'marimba') {
+      // Warm, deeper resonator bar
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(freq, playTime);
+
+      gain.gain.setValueAtTime(0.0001, playTime);
+      gain.gain.linearRampToValueAtTime(volume * 0.9, playTime + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, playTime + 0.65);
+    } else if (instrument === 'synth') {
+      // Fun 8-bit / playful electronic lead
+      osc1.type = 'sawtooth';
+      osc1.frequency.setValueAtTime(freq, playTime);
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1400, playTime);
+      filter.frequency.exponentialRampToValueAtTime(400, playTime + 0.35);
+
+      gain.gain.setValueAtTime(0.0001, playTime);
+      gain.gain.linearRampToValueAtTime(volume * 0.5, playTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, playTime + 0.4);
+
+      osc1.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      osc1.start(playTime);
+      osc1.stop(playTime + 0.45);
+      return;
+    } else {
+      // Piano
+      osc1.type = 'triangle';
+      osc1.frequency.setValueAtTime(freq, playTime);
+
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(freq * 2, playTime);
+
+      const gain2 = ctx.createGain();
+      gain2.gain.setValueAtTime(volume * 0.3, playTime);
+      gain2.gain.exponentialRampToValueAtTime(0.0001, playTime + 0.7);
+
+      gain.gain.setValueAtTime(0.0001, playTime);
+      gain.gain.linearRampToValueAtTime(volume * 0.7, playTime + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, playTime + 0.85);
+
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(playTime);
+      osc2.stop(playTime + 0.9);
+    }
+
+    osc1.connect(gain);
+    gain.connect(ctx.destination);
+    osc1.start(playTime);
+    osc1.stop(playTime + 0.7);
+  }
+
   public noteNameToFrequency(noteName: string): number {
     const notes: Record<string, number> = {
       C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6,

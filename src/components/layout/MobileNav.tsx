@@ -27,8 +27,8 @@ export const MobileNav: React.FC = () => {
     { id: 'home' as NavView, label: 'Home', icon: LayoutDashboard },
     { id: 'planner' as NavView, label: 'Planner', icon: BookOpen },
     { id: 'tasks' as NavView, label: 'Tasks', icon: CheckSquare },
-    { id: 'tools' as NavView, label: 'Tools', icon: Music2 },
-    { id: 'chorus' as NavView, label: 'Chorus', icon: Users },
+    { id: 'tools' as NavView, label: 'Song Maker', icon: Music2 },
+    { id: 'audio-studio' as NavView, label: 'Studio', icon: Sparkles },
   ];
 
   const secondaryTabs = [
@@ -36,7 +36,6 @@ export const MobileNav: React.FC = () => {
     { id: 'visuals' as NavView, label: 'Literacy Visuals', icon: Sparkles },
     { id: 'timer' as NavView, label: 'Classroom Timer', icon: Timer },
     { id: 'seating' as NavView, label: 'Seating Charts', icon: Grid },
-    { id: 'inventory' as NavView, label: 'Cart Inventory', icon: Boxes },
     { id: 'resources' as NavView, label: 'Drive Resources', icon: FolderSync },
     { id: 'journal' as NavView, label: 'Daily Journal', icon: BookMarked },
     { id: 'youtube' as NavView, label: 'YouTube Browser', icon: Video },

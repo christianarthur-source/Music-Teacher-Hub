@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { storage } from '../../services/storage';
 import { CalendarEvent } from '../../types';
@@ -7,22 +7,33 @@ import {
   Plus,
   Download,
   Upload,
+  Link as LinkIcon,
   Clock,
   MapPin,
   ChevronLeft,
   ChevronRight,
   Sparkles,
   Trash2,
-  CheckCircle2
+  CheckCircle2,
+  LayoutGrid,
+  List,
+  Columns,
+  Globe,
+  FileText
 } from 'lucide-react';
 
 export const CalendarView: React.FC = () => {
   const { showToast } = useApp();
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [viewMode, setViewMode] = useState<'month' | 'agenda'>('agenda');
+  const [viewMode, setViewMode] = useState<'month' | 'week' | 'agenda'>('month');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [selectedDayEvents, setSelectedDayEvents] = useState<{ date: string; events: CalendarEvent[] } | null>(null);
+
+  // Active Date for Month and Week Navigation
+  const [currentDate, setCurrentDate] = useState<Date>(new Date(2026, 10, 3)); // Nov 3, 2026 default
 
   // Form State
   const [title, setTitle] = useState('');
@@ -30,6 +41,12 @@ export const CalendarView: React.FC = () => {
   const [startDate, setStartDate] = useState('2026-11-03T10:15');
   const [endDate, setEndDate] = useState('2026-11-03T10:55');
   const [location, setLocation] = useState('Room 104');
+
+  // Shared Link / ICS Import State
+  const [importUrl, setImportUrl] = useState('');
+  const [importIcsText, setImportIcsText] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const icsFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const reloadData = () => {
     setEvents(storage.getEvents());
@@ -51,7 +68,8 @@ export const CalendarView: React.FC = () => {
       concert: '#d97706',
       assembly: '#059669',
       pd: '#7c3aed',
-      meeting: '#475569'
+      meeting: '#475569',
+      rehearsal: '#be123c'
     };
 
     const created = storage.addEvent({
@@ -69,9 +87,173 @@ export const CalendarView: React.FC = () => {
     showToast(`Added event: ${created.title}`, 'success');
   };
 
-  const handleDeleteEvent = (id: string) => {
+  const handleDeleteEvent = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     storage.deleteEvent(id);
     showToast('Event deleted', 'info');
+  };
+
+  // Helper to format iCalendar timestamp (YYYYMMDDTHHMMSS or YYYYMMDD)
+  const formatIcsDate = (val?: string): string => {
+    if (!val) return new Date().toISOString().slice(0, 16);
+    const cleaned = val.replace(/[^0-9T]/g, '');
+    if (cleaned.length >= 13) {
+      // 20261103T143000
+      const y = cleaned.slice(0, 4);
+      const m = cleaned.slice(4, 6);
+      const d = cleaned.slice(6, 8);
+      const h = cleaned.slice(9, 11);
+      const min = cleaned.slice(11, 13);
+      return `${y}-${m}-${d}T${h}:${min}`;
+    } else if (cleaned.length >= 8) {
+      // 20261103
+      const y = cleaned.slice(0, 4);
+      const m = cleaned.slice(4, 6);
+      const d = cleaned.slice(6, 8);
+      return `${y}-${m}-${d}T09:00`;
+    }
+    return new Date().toISOString().slice(0, 16);
+  };
+
+  // Parse ICS content into CalendarEvent list
+  const parseIcsText = (icsText: string): Partial<CalendarEvent>[] => {
+    const parsed: Partial<CalendarEvent>[] = [];
+    const lines = icsText.split(/\r\n|\n|\r/);
+    let inEvent = false;
+    let current: any = {};
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+      // handle line unfolding
+      while (i + 1 < lines.length && (lines[i + 1].startsWith(' ') || lines[i + 1].startsWith('\t'))) {
+        line += lines[i + 1].slice(1);
+        i++;
+      }
+
+      if (line.startsWith('BEGIN:VEVENT')) {
+        inEvent = true;
+        current = {};
+      } else if (line.startsWith('END:VEVENT')) {
+        if (current.title && current.startDate) {
+          if (!current.endDate) {
+            current.endDate = current.startDate;
+          }
+          parsed.push(current);
+        }
+        inEvent = false;
+      } else if (inEvent) {
+        if (line.startsWith('SUMMARY:')) {
+          current.title = line.substring(8).trim();
+        } else if (line.startsWith('DTSTART')) {
+          const val = line.split(':')[1]?.trim();
+          current.startDate = formatIcsDate(val);
+        } else if (line.startsWith('DTEND')) {
+          const val = line.split(':')[1]?.trim();
+          current.endDate = formatIcsDate(val);
+        } else if (line.startsWith('LOCATION:')) {
+          current.location = line.substring(9).trim();
+        } else if (line.startsWith('UID:')) {
+          current.uid = line.substring(4).trim();
+        } else if (line.startsWith('DESCRIPTION:')) {
+          current.description = line.substring(12).trim();
+        }
+      }
+    }
+    return parsed;
+  };
+
+  // Import from ICS file
+  const handleIcsFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (text) {
+        processIcsImport(text);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // Process and save parsed events with deduplication
+  const processIcsImport = (icsData: string) => {
+    try {
+      const parsedList = parseIcsText(icsData);
+      if (parsedList.length === 0) {
+        showToast('No valid events found in calendar data', 'warning');
+        return;
+      }
+
+      const existingEvents = storage.getEvents();
+      let importedCount = 0;
+
+      parsedList.forEach((item) => {
+        // Deduplicate by title & startDate
+        const exists = existingEvents.some(
+          (ex) => ex.title.toLowerCase() === item.title?.toLowerCase() && ex.startDate === item.startDate
+        );
+
+        if (!exists && item.title && item.startDate) {
+          storage.addEvent({
+            title: item.title,
+            startDate: item.startDate,
+            endDate: item.endDate || item.startDate,
+            category: 'concert',
+            location: item.location || 'School Auditorium',
+            color: '#d97706',
+            source: 'imported_ics'
+          });
+          importedCount++;
+        }
+      });
+
+      reloadData();
+      setIsImportModalOpen(false);
+      setImportUrl('');
+      setImportIcsText('');
+      showToast(`Successfully imported ${importedCount} event(s)!`, 'success');
+    } catch (err) {
+      console.error('ICS parse error:', err);
+      showToast('Error parsing calendar file', 'error');
+    }
+  };
+
+  // Handle Shared Calendar Link (Google / Apple Calendar webcal)
+  const handleImportSharedLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importUrl.trim() && !importIcsText.trim()) {
+      showToast('Please provide a calendar link or paste .ics text', 'warning');
+      return;
+    }
+
+    if (importIcsText.trim()) {
+      processIcsImport(importIcsText);
+      return;
+    }
+
+    let url = importUrl.trim();
+    if (url.startsWith('webcal://')) {
+      url = 'https://' + url.slice(9);
+    }
+
+    setIsImporting(true);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+      const text = await res.text();
+      processIcsImport(text);
+    } catch (err) {
+      console.warn('Direct CORS fetch failed. Prompting user to paste file content.', err);
+      showToast(
+        'Direct download blocked by calendar provider CORS. Please paste the .ics content or download and upload the file.',
+        'warning'
+      );
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   // Export iCalendar (.ics)
@@ -106,37 +288,137 @@ export const CalendarView: React.FC = () => {
     showToast('Exported calendar as .ics for Apple / Google Calendar', 'success');
   };
 
+  // Quick preset sample import for testing
+  const loadSampleSchoolCalendar = () => {
+    const sampleIcs = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Sample District Calendar//EN
+BEGIN:VEVENT
+UID:district-101@school.edu
+SUMMARY:District Fine Arts Festival & All-County Concert
+DTSTART:20261120T190000
+DTEND:20261120T210000
+LOCATION:High School Performing Arts Center
+DESCRIPTION:Combined district elementary and middle school choruses
+END:VEVENT
+BEGIN:VEVENT
+UID:district-102@school.edu
+SUMMARY:Kindergarten Thanksgiving Musical Informance
+DTSTART:20261124T093000
+DTEND:20261124T103000
+LOCATION:Elementary Cafeteria Stage
+DESCRIPTION:Kindergarten steady beat play-along for families
+END:VEVENT
+BEGIN:VEVENT
+UID:district-103@school.edu
+SUMMARY:Winter Holiday Concert (Grades 4-6)
+DTSTART:20261215T183000
+DTEND:20261215T200000
+LOCATION:Main Auditorium
+DESCRIPTION:Grade 4-5 general music ensembles & 6th grade chorus
+END:VEVENT
+END:VCALENDAR`;
+    processIcsImport(sampleIcs);
+  };
+
+  // Navigation handlers
+  const handlePrev = () => {
+    if (viewMode === 'month') {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+    } else if (viewMode === 'week') {
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() - 7);
+      setCurrentDate(d);
+    }
+  };
+
+  const handleNext = () => {
+    if (viewMode === 'month') {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+    } else if (viewMode === 'week') {
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() + 7);
+      setCurrentDate(d);
+    }
+  };
+
+  const handleToday = () => {
+    setCurrentDate(new Date());
+  };
+
   const filteredEvents = events.filter((e) => {
     if (selectedCategory === 'all') return true;
     return e.category === selectedCategory;
   });
 
+  // Calculate Month Grid Days
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 is Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const prevMonthDays = new Date(year, month, 0).getDate();
+
+  // Calculate Week Dates (Sun - Sat)
+  const currentDayOfWeek = currentDate.getDay();
+  const weekStart = new Date(currentDate);
+  weekStart.setDate(currentDate.getDate() - currentDayOfWeek);
+  const weekDays = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    return d;
+  });
+
+  const monthTitle = currentDate.toLocaleDateString('default', { month: 'long', year: 'numeric' });
+  const weekTitle = `${weekDays[0].toLocaleDateString('default', { month: 'short', day: 'numeric' })} – ${weekDays[6].toLocaleDateString('default', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-200">
+      {/* Hidden file input for .ics import */}
+      <input
+        ref={icsFileInputRef}
+        type="file"
+        accept=".ics,.ical,text/calendar"
+        onChange={handleIcsFileUpload}
+        className="hidden"
+      />
+
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-200 dark:border-stone-800">
         <div>
           <h1 className="text-2xl font-extrabold text-stone-900 dark:text-white flex items-center gap-2.5">
-            <CalendarIcon className="w-6 h-6 text-brand-600" />
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-md">
+              <CalendarIcon className="w-5 h-5" />
+            </div>
             <span>Class & Rehearsal Calendar</span>
           </h1>
-          <p className="text-xs sm:text-sm text-stone-500 dark:text-stone-400 mt-0.5">
-            Unified schedule for K–6 general music, 6th-grade chorus rehearsals, assemblies, and concert dates.
+          <p className="text-xs sm:text-sm text-stone-500 dark:text-stone-400 mt-1">
+            Month grid, week schedule, and agenda view with Google & Apple Calendar import/export.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Action Buttons: Import, Export, Add Event */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-bold flex items-center gap-1.5 transition-all"
+            title="Import shared Apple or Google calendar"
+          >
+            <Upload className="w-4 h-4 text-sky-500" />
+            <span>Import Calendar</span>
+          </button>
+
           <button
             onClick={handleExportIcs}
-            className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 text-stone-700 dark:text-stone-300 text-xs font-semibold flex items-center gap-1.5 transition-all"
+            className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-bold flex items-center gap-1.5 transition-all"
             title="Export .ics file for Apple Calendar & Google Calendar"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4 text-emerald-500" />
             <span>Export .ics</span>
           </button>
+
           <button
             onClick={() => setIsAddEventOpen(true)}
-            className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+            className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all active:scale-95"
           >
             <Plus className="w-4 h-4" />
             <span>Add Event</span>
@@ -144,13 +426,83 @@ export const CalendarView: React.FC = () => {
         </div>
       </div>
 
-      {/* Filter Chips */}
+      {/* Control Bar: Month / Week / Agenda Switcher + Navigation + Filter Chips */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Navigation Arrows & Label */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 bg-stone-100 dark:bg-stone-800/80 p-1 rounded-2xl border border-stone-200/80 dark:border-stone-700/80">
+            <button
+              onClick={handlePrev}
+              className="p-1.5 rounded-xl hover:bg-white dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 transition-all"
+              title="Previous"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleToday}
+              className="px-3 py-1 rounded-xl text-xs font-bold hover:bg-white dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200 transition-all"
+            >
+              Today
+            </button>
+            <button
+              onClick={handleNext}
+              className="p-1.5 rounded-xl hover:bg-white dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 transition-all"
+              title="Next"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          <h2 className="text-base sm:text-lg font-black text-stone-900 dark:text-white">
+            {viewMode === 'month' ? monthTitle : viewMode === 'week' ? weekTitle : 'Agenda'}
+          </h2>
+        </div>
+
+        {/* View Mode Switcher (Month, Week, Agenda) */}
+        <div className="flex p-1 rounded-2xl bg-stone-100 dark:bg-stone-800/80 border border-stone-200/80 dark:border-stone-700/80 self-start md:self-auto shadow-inner">
+          <button
+            onClick={() => setViewMode('month')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+              viewMode === 'month'
+                ? 'bg-white dark:bg-stone-900 text-brand-600 dark:text-brand-400 shadow-sm'
+                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Month</span>
+          </button>
+          <button
+            onClick={() => setViewMode('week')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+              viewMode === 'week'
+                ? 'bg-white dark:bg-stone-900 text-brand-600 dark:text-brand-400 shadow-sm'
+                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+            }`}
+          >
+            <Columns className="w-3.5 h-3.5" />
+            <span>Week</span>
+          </button>
+          <button
+            onClick={() => setViewMode('agenda')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+              viewMode === 'agenda'
+                ? 'bg-white dark:bg-stone-900 text-brand-600 dark:text-brand-400 shadow-sm'
+                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+            }`}
+          >
+            <List className="w-3.5 h-3.5" />
+            <span>Agenda</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Category Filter Chips */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
         {[
           { id: 'all', label: 'All Events' },
           { id: 'class', label: 'Music Classes' },
           { id: 'chorus', label: 'Chorus Rehearsals' },
-          { id: 'concert', label: 'Concerts' },
+          { id: 'concert', label: 'Concerts & Shows' },
           { id: 'assembly', label: 'Assemblies' },
           { id: 'pd', label: 'Professional Learning' }
         ].map((chip) => (
@@ -168,67 +520,434 @@ export const CalendarView: React.FC = () => {
         ))}
       </div>
 
-      {/* Events Agenda View */}
-      <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 shadow-card border border-stone-200/80 dark:border-stone-800 space-y-4">
-        <h3 className="text-sm font-bold text-stone-900 dark:text-white flex items-center justify-between">
-          <span>Upcoming Events & Classes ({filteredEvents.length})</span>
-        </h3>
+      {/* 1. MONTH VIEW */}
+      {viewMode === 'month' && (
+        <div className="bg-white dark:bg-stone-900 rounded-3xl p-4 sm:p-6 shadow-card border border-stone-200/80 dark:border-stone-800 space-y-3">
+          {/* Day of Week Header */}
+          <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center text-xs font-black uppercase tracking-wider text-stone-400 pb-2 border-b border-stone-100 dark:border-stone-800">
+            <span>Sun</span>
+            <span>Mon</span>
+            <span>Tue</span>
+            <span>Wed</span>
+            <span>Thu</span>
+            <span>Fri</span>
+            <span>Sat</span>
+          </div>
 
-        <div className="space-y-3">
-          {filteredEvents.map((event) => {
-            const dateStr = event.startDate.split('T')[0];
-            const startTime = event.startDate.split('T')[1]?.slice(0, 5) || '09:00';
-            const endTime = event.endDate.split('T')[1]?.slice(0, 5) || '09:40';
+          {/* Month Grid Cells (7 columns) */}
+          <div className="grid grid-cols-7 gap-1 sm:gap-2">
+            {/* Blank / Prev Month padding cells */}
+            {Array.from({ length: firstDayOfMonth }).map((_, i) => {
+              const dayNum = prevMonthDays - firstDayOfMonth + i + 1;
+              return (
+                <div
+                  key={`prev-${i}`}
+                  className="min-h-[85px] sm:min-h-[110px] p-1.5 sm:p-2 rounded-2xl bg-stone-50/50 dark:bg-stone-800/20 text-stone-300 dark:text-stone-600 text-xs font-mono select-none"
+                >
+                  {dayNum}
+                </div>
+              );
+            })}
 
-            return (
-              <div
-                key={event.id}
-                className="flex items-center justify-between p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/60 dark:border-stone-800 hover:border-stone-300 dark:hover:border-stone-700 transition-all"
-              >
-                <div className="flex items-center gap-4 min-w-0 pr-3">
-                  <div
-                    className="w-3 h-12 rounded-full shrink-0"
-                    style={{ backgroundColor: event.color || '#0c87eb' }}
-                  />
+            {/* Days in Month */}
+            {Array.from({ length: daysInMonth }).map((_, i) => {
+              const dayNum = i + 1;
+              const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+              const isToday =
+                new Date().toISOString().split('T')[0] === dateStr;
 
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300">
-                        {event.category}
+              // Events occurring on this day
+              const dayEvents = filteredEvents.filter((e) => e.startDate.startsWith(dateStr));
+
+              return (
+                <div
+                  key={`day-${dayNum}`}
+                  onClick={() => {
+                    if (dayEvents.length > 0) {
+                      setSelectedDayEvents({ date: dateStr, events: dayEvents });
+                    } else {
+                      setStartDate(`${dateStr}T10:00`);
+                      setEndDate(`${dateStr}T10:45`);
+                      setIsAddEventOpen(true);
+                    }
+                  }}
+                  className={`min-h-[85px] sm:min-h-[110px] p-1.5 sm:p-2 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+                    isToday
+                      ? 'bg-brand-50/50 dark:bg-brand-950/20 border-brand-300 dark:border-brand-800'
+                      : 'bg-stone-50/80 dark:bg-stone-800/40 border-stone-200/60 dark:border-stone-800 hover:border-brand-400'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`text-xs font-mono font-bold w-6 h-6 rounded-full flex items-center justify-center ${
+                        isToday
+                          ? 'bg-brand-600 text-white shadow-sm'
+                          : 'text-stone-700 dark:text-stone-300'
+                      }`}
+                    >
+                      {dayNum}
+                    </span>
+                    {dayEvents.length > 0 && (
+                      <span className="text-[10px] font-bold text-stone-400 hidden sm:inline">
+                        {dayEvents.length} event{dayEvents.length > 1 ? 's' : ''}
                       </span>
-                      <span className="text-xs font-mono text-stone-400">{dateStr}</span>
-                    </div>
+                    )}
+                  </div>
 
-                    <h4 className="text-sm font-bold text-stone-900 dark:text-white truncate mt-0.5">
-                      {event.title}
-                    </h4>
-
-                    <p className="text-xs text-stone-500 dark:text-stone-400 truncate flex items-center gap-1.5 mt-0.5">
-                      <Clock className="w-3.5 h-3.5" />
-                      <span>{startTime} – {endTime}</span>
-                      {event.location && (
-                        <>
-                          <span>•</span>
-                          <MapPin className="w-3.5 h-3.5" />
-                          <span>{event.location}</span>
-                        </>
-                      )}
-                    </p>
+                  {/* Event Chips */}
+                  <div className="space-y-1 mt-1 overflow-hidden">
+                    {dayEvents.slice(0, 3).map((ev) => (
+                      <div
+                        key={ev.id}
+                        className="px-1.5 py-0.5 rounded-lg text-[10px] font-bold truncate text-white shadow-xs"
+                        style={{ backgroundColor: ev.color || '#0c87eb' }}
+                        title={`${ev.title} (${ev.startDate.split('T')[1]?.slice(0, 5)})`}
+                      >
+                        {ev.title}
+                      </div>
+                    ))}
+                    {dayEvents.length > 3 && (
+                      <div className="text-[9px] font-bold text-stone-500 text-center">
+                        +{dayEvents.length - 3} more
+                      </div>
+                    )}
                   </div>
                 </div>
-
-                <button
-                  onClick={() => handleDeleteEvent(event.id)}
-                  className="p-2 text-stone-400 hover:text-rose-500 rounded-xl transition-colors"
-                  title="Delete Event"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* 2. WEEK VIEW */}
+      {viewMode === 'week' && (
+        <div className="bg-white dark:bg-stone-900 rounded-3xl p-4 sm:p-6 shadow-card border border-stone-200/80 dark:border-stone-800 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+            {weekDays.map((dayDate, i) => {
+              const dayStr = dayDate.toISOString().split('T')[0];
+              const isToday = new Date().toISOString().split('T')[0] === dayStr;
+              const dayEvents = filteredEvents.filter((e) => e.startDate.startsWith(dayStr));
+              const dayName = dayDate.toLocaleDateString('default', { weekday: 'short' });
+              const dateNumber = dayDate.getDate();
+
+              return (
+                <div
+                  key={i}
+                  className={`p-3 rounded-2xl border flex flex-col space-y-3 min-h-[280px] ${
+                    isToday
+                      ? 'bg-brand-50/40 dark:bg-brand-950/20 border-brand-300 dark:border-brand-800'
+                      : 'bg-stone-50 dark:bg-stone-800/40 border-stone-200/60 dark:border-stone-800'
+                  }`}
+                >
+                  {/* Column Header */}
+                  <div className="flex items-center justify-between pb-2 border-b border-stone-200/60 dark:border-stone-700/60">
+                    <div>
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400 block">
+                        {dayName}
+                      </span>
+                      <span className="text-base font-extrabold text-stone-900 dark:text-white">
+                        {dateNumber}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setStartDate(`${dayStr}T10:00`);
+                        setEndDate(`${dayStr}T10:45`);
+                        setIsAddEventOpen(true);
+                      }}
+                      className="p-1 rounded-lg text-stone-400 hover:text-brand-600 hover:bg-stone-200 dark:hover:bg-stone-700"
+                      title="Add event on this day"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Day Events list */}
+                  <div className="space-y-2 flex-1">
+                    {dayEvents.length === 0 ? (
+                      <div className="h-full flex items-center justify-center text-[11px] text-stone-400 italic">
+                        No events
+                      </div>
+                    ) : (
+                      dayEvents.map((ev) => {
+                        const time = ev.startDate.split('T')[1]?.slice(0, 5) || '10:00';
+                        return (
+                          <div
+                            key={ev.id}
+                            className="p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 shadow-xs space-y-1"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className="w-2 h-2 rounded-full shrink-0"
+                                style={{ backgroundColor: ev.color || '#0c87eb' }}
+                              />
+                              <span className="text-[10px] font-mono font-bold text-stone-500">
+                                {time}
+                              </span>
+                            </div>
+                            <h4 className="text-xs font-bold text-stone-900 dark:text-white leading-tight">
+                              {ev.title}
+                            </h4>
+                            {ev.location && (
+                              <p className="text-[10px] text-stone-400 truncate flex items-center gap-1">
+                                <MapPin className="w-3 h-3 shrink-0" />
+                                <span>{ev.location}</span>
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 3. AGENDA VIEW */}
+      {viewMode === 'agenda' && (
+        <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 shadow-card border border-stone-200/80 dark:border-stone-800 space-y-4">
+          <h3 className="text-sm font-bold text-stone-900 dark:text-white flex items-center justify-between">
+            <span>Upcoming Classes & Schedule ({filteredEvents.length})</span>
+          </h3>
+
+          <div className="space-y-3">
+            {filteredEvents.map((event) => {
+              const dateStr = event.startDate.split('T')[0];
+              const startTime = event.startDate.split('T')[1]?.slice(0, 5) || '09:00';
+              const endTime = event.endDate.split('T')[1]?.slice(0, 5) || '09:40';
+
+              return (
+                <div
+                  key={event.id}
+                  className="flex items-center justify-between p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/60 dark:border-stone-800 hover:border-stone-300 dark:hover:border-stone-700 transition-all"
+                >
+                  <div className="flex items-center gap-4 min-w-0 pr-3">
+                    <div
+                      className="w-3 h-12 rounded-full shrink-0"
+                      style={{ backgroundColor: event.color || '#0c87eb' }}
+                    />
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300">
+                          {event.category}
+                        </span>
+                        <span className="text-xs font-mono text-stone-400">{dateStr}</span>
+                        {event.source === 'imported_ics' && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
+                            Imported
+                          </span>
+                        )}
+                      </div>
+
+                      <h4 className="text-sm font-bold text-stone-900 dark:text-white truncate mt-0.5">
+                        {event.title}
+                      </h4>
+
+                      <p className="text-xs text-stone-500 dark:text-stone-400 truncate flex items-center gap-1.5 mt-0.5">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>{startTime} – {endTime}</span>
+                        {event.location && (
+                          <>
+                            <span>•</span>
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span>{event.location}</span>
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={(e) => handleDeleteEvent(event.id, e)}
+                    className="p-2 text-stone-400 hover:text-rose-500 rounded-xl transition-colors"
+                    title="Delete Event"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Selected Day Events Popup Modal (from Month View click) */}
+      {selectedDayEvents && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-stone-200 dark:border-stone-800 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-stone-100 dark:border-stone-800">
+              <div>
+                <span className="text-xs font-bold text-stone-400 uppercase tracking-wider">
+                  Events for Day
+                </span>
+                <h3 className="text-lg font-bold text-stone-900 dark:text-white">
+                  {selectedDayEvents.date}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedDayEvents(null)}
+                className="p-2 rounded-xl text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-[350px] overflow-y-auto">
+              {selectedDayEvents.events.map((ev) => (
+                <div
+                  key={ev.id}
+                  className="p-3 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/60 dark:border-stone-700 flex items-center justify-between"
+                >
+                  <div>
+                    <h4 className="text-xs font-bold text-stone-900 dark:text-white">
+                      {ev.title}
+                    </h4>
+                    <p className="text-[11px] text-stone-400">
+                      {ev.startDate.split('T')[1]?.slice(0, 5)} - {ev.endDate.split('T')[1]?.slice(0, 5)} {ev.location && `• ${ev.location}`}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      handleDeleteEvent(ev.id);
+                      setSelectedDayEvents({
+                        date: selectedDayEvents.date,
+                        events: selectedDayEvents.events.filter((e) => e.id !== ev.id)
+                      });
+                    }}
+                    className="p-1.5 text-stone-400 hover:text-rose-500 rounded-lg"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-between items-center pt-2">
+              <button
+                onClick={() => {
+                  setStartDate(`${selectedDayEvents.date}T10:00`);
+                  setEndDate(`${selectedDayEvents.date}T10:45`);
+                  setSelectedDayEvents(null);
+                  setIsAddEventOpen(true);
+                }}
+                className="px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold shadow-sm"
+              >
+                + Add Another Event
+              </button>
+              <button
+                onClick={() => setSelectedDayEvents(null)}
+                className="px-4 py-2 bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 rounded-xl text-xs font-semibold"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Shared Calendar Link / ICS Import Modal */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-stone-200 dark:border-stone-800 space-y-5">
+            <div className="flex items-center justify-between pb-2 border-b border-stone-100 dark:border-stone-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-sky-50 dark:bg-sky-950/60 flex items-center justify-center text-sky-600">
+                  <Globe className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-stone-900 dark:text-white">
+                    Import External Calendar
+                  </h3>
+                  <p className="text-xs text-stone-400">
+                    Import shared calendar links from Google, Apple, or Outlook.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsImportModalOpen(false)}
+                className="text-stone-400 hover:text-stone-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Option 1: Upload .ics file directly */}
+            <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200/80 dark:border-stone-700/80 space-y-2">
+              <span className="text-xs font-bold text-stone-700 dark:text-stone-300 block">
+                Option 1: Upload Calendar File (.ics / .ical)
+              </span>
+              <p className="text-[11px] text-stone-500">
+                Export from Google Calendar or Apple Calendar, then drop or select the file here.
+              </p>
+              <button
+                onClick={() => icsFileInputRef.current?.click()}
+                className="px-4 py-2 rounded-xl bg-white dark:bg-stone-800 text-brand-600 dark:text-brand-400 text-xs font-bold border border-brand-200 dark:border-brand-800 shadow-xs hover:bg-brand-50"
+              >
+                Choose .ics File
+              </button>
+            </div>
+
+            {/* Option 2: Shared Webcal URL */}
+            <form onSubmit={handleImportSharedLink} className="space-y-3">
+              <span className="text-xs font-bold text-stone-700 dark:text-stone-300 block">
+                Option 2: Shared Calendar Link (Google / Apple webcal)
+              </span>
+              <input
+                type="text"
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+                placeholder="webcal://pXX-caldav.icloud.com/... or https://calendar.google.com/..."
+                className="w-full text-xs px-3 py-2.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl"
+              />
+
+              <div>
+                <label className="text-[11px] font-bold text-stone-400 block mb-1">
+                  Or paste raw iCalendar (.ics) text:
+                </label>
+                <textarea
+                  value={importIcsText}
+                  onChange={(e) => setImportIcsText(e.target.value)}
+                  placeholder="BEGIN:VCALENDAR&#10;BEGIN:VEVENT&#10;SUMMARY:Fine Arts Night&#10;..."
+                  rows={3}
+                  className="w-full text-xs font-mono p-2.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="button"
+                  onClick={loadSampleSchoolCalendar}
+                  className="text-xs font-bold text-sky-600 dark:text-sky-400 hover:underline"
+                >
+                  ⚡ Load Sample District Calendar
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsImportModalOpen(false)}
+                    className="px-4 py-2 text-xs font-semibold text-stone-600 dark:text-stone-300"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isImporting}
+                    className="px-5 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-sm"
+                  >
+                    {isImporting ? 'Importing...' : 'Import Calendar'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Add Event Modal */}
       {isAddEventOpen && (
@@ -262,11 +981,11 @@ export const CalendarView: React.FC = () => {
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as any)}
-                className="w-full text-xs px-3 py-2 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl"
+                className="w-full text-xs px-3 py-2 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl font-medium"
               >
                 <option value="class">Music Class</option>
                 <option value="chorus">Chorus Rehearsal</option>
-                <option value="concert">Concert</option>
+                <option value="concert">Concert / Performance</option>
                 <option value="assembly">School Assembly</option>
                 <option value="pd">Professional Development</option>
                 <option value="meeting">Meeting / Duty</option>

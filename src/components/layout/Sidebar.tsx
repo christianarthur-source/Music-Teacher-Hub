@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp, NavView } from '../../context/AppContext';
 import { storage } from '../../services/storage';
+import { Logo } from './Logo';
 import {
   LayoutDashboard,
   CheckSquare,
@@ -63,9 +64,8 @@ export const Sidebar: React.FC = () => {
     {
       group: 'Music Studio',
       items: [
-        { id: 'tools', label: 'Music Tools', icon: Music2 },
-        { id: 'audio-studio', label: 'Audio Studio', icon: Sliders },
-        { id: 'chorus', label: '6th Grade Chorus', icon: Users }
+        { id: 'tools', label: 'Song Maker & Tools', icon: Music2 },
+        { id: 'audio-studio', label: 'Audio Practice Lab', icon: Sliders },
       ]
     },
     {
@@ -74,7 +74,6 @@ export const Sidebar: React.FC = () => {
         { id: 'visuals', label: 'Music Literacy Visuals', icon: Sparkles },
         { id: 'timer', label: 'Classroom Timer', icon: Timer },
         { id: 'seating', label: 'Seating Charts', icon: Grid },
-        { id: 'inventory', label: 'Cart & Inventory', icon: Boxes }
       ]
     },
     {
@@ -90,26 +89,16 @@ export const Sidebar: React.FC = () => {
   return (
     <aside
       className={`hidden lg:flex flex-col h-screen sticky top-0 bg-stone-100/70 dark:bg-stone-900/80 border-r border-stone-200/80 dark:border-stone-800 transition-all duration-300 z-20 ${
-        isSidebarCollapsed ? 'w-20' : 'w-64'
+        isSidebarCollapsed ? 'w-20' : 'w-[270px]'
       }`}
     >
-      {/* Brand Header */}
+      {/* Brand Header with Custom Logo */}
       <div className="p-4 flex items-center justify-between border-b border-stone-200/60 dark:border-stone-800">
-        <div className="flex items-center gap-3 overflow-hidden">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-600 flex items-center justify-center text-white shadow-sm shrink-0">
-            <Music className="w-5 h-5" />
-          </div>
-          {!isSidebarCollapsed && (
-            <div className="overflow-hidden">
-              <h2 className="font-bold text-sm text-stone-900 dark:text-white truncate">
-                {preferences.appName}
-              </h2>
-              <p className="text-xs text-stone-500 dark:text-stone-400 truncate">
-                {preferences.teacherName}
-              </p>
-            </div>
-          )}
-        </div>
+        <Logo
+          collapsed={isSidebarCollapsed}
+          appName={preferences.appName}
+          teacherName={preferences.teacherName || 'Christian Arthur'}
+        />
       </div>
 
       {/* Nav List */}
