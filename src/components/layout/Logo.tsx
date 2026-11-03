@@ -21,13 +21,13 @@ export const Logo: React.FC<LogoProps> = ({
     return (
       <div className={`flex items-center justify-center select-none ${className}`}>
         <div
-          className="w-11 h-11 rounded-xl bg-[#14171c] border border-stone-800/90 flex items-center justify-center p-1.5 shadow-md shadow-rose-950/20 hover:scale-105 transition-transform duration-200 group"
+          className="w-11 h-11 rounded-xl bg-[#14171c] border border-stone-800/90 flex items-center justify-center p-1.5 shadow-md shadow-stone-950/30 hover:scale-105 transition-transform duration-200 group"
           title={`${appName} — ${teacherName}`}
         >
           <img
             src={logoIcon}
             alt={appName}
-            className="w-full h-full object-contain filter drop-shadow group-hover:rotate-6 transition-transform duration-300"
+            className="w-full h-full object-contain filter drop-shadow group-hover:scale-105 transition-transform duration-300"
           />
         </div>
       </div>
@@ -44,7 +44,7 @@ export const Logo: React.FC<LogoProps> = ({
           <span className="font-extrabold text-xs text-stone-900 dark:text-white leading-tight block">
             {appName}
           </span>
-          <span className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 leading-none block">
+          <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 leading-none block">
             {teacherName}
           </span>
         </div>
@@ -60,9 +60,9 @@ export const Logo: React.FC<LogoProps> = ({
           <img
             src={logoTrimmed}
             alt={appName}
-            className="h-9 w-auto max-w-[170px] object-contain group-hover:scale-[1.02] transition-transform duration-200"
+            className="h-10 w-auto max-w-[175px] object-contain group-hover:scale-[1.02] transition-transform duration-200"
           />
-          <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-mono font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+          <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
             ♫ K-6
           </span>
         </div>
