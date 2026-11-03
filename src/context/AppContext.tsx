@@ -51,6 +51,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'home', 'planner', 'tasks', 'calendar', 'tools', 'audio-studio',
         'seating', 'visuals', 'timer', 'resources', 'journal', 'youtube', 'settings'
       ];
+      if (hash.startsWith('visuals')) return 'visuals';
       if (validViews.includes(hash)) return hash;
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get('view') as NavView;

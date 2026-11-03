@@ -24,8 +24,7 @@ import {
   Filter,
   X,
   ChevronLeft,
-  ChevronRight,
-  Lightbulb
+  ChevronRight
 } from 'lucide-react';
 
 export const JournalView: React.FC = () => {
@@ -53,17 +52,6 @@ export const JournalView: React.FC = () => {
   const [photoUrl, setPhotoUrl] = useState<string | undefined>(undefined);
   const [starred, setStarred] = useState(false);
   const [tagsStr, setTagsStr] = useState('reflection, general-music');
-
-  // Prompts of the Day
-  const PROMPTS = [
-    'Which student demonstrated an unexpected rhythm or singing breakthrough today?',
-    'What transition between movement and instrument playing succeeded best today?',
-    'Which Orff mallet or boomwhacker arrangement is a keeper to repeat next week?',
-    'What vocal warm-up worked wonders for head-voice resonance today?',
-    'What is one specific adjustment you would make to today\'s recorder lesson?',
-    'How did the students respond to today\'s world music listening example?'
-  ];
-  const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -136,15 +124,6 @@ Activities for sub (e.g. Chrome Music Lab or video listening lesson in Link Libr
     setTagsStr(`template, ${tmpl.type}`);
     setIsEditing(true);
     showToast(`Loaded ${tmpl.name} template`, 'info');
-  };
-
-  const handleApplyPrompt = () => {
-    const promptText = PROMPTS[currentPromptIndex];
-    setTitle(`Pedagogical Reflection: ${promptText.slice(0, 35)}...`);
-    setContent(`Prompt: ${promptText}\n\nReflection:\n`);
-    setTagsStr('prompt, reflection, breakthrough');
-    setIsEditing(true);
-    showToast('Created reflection from prompt', 'info');
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -345,38 +324,6 @@ Activities for sub (e.g. Chrome Music Lab or video listening lesson in Link Libr
           </button>
         </div>
       )}
-
-      {/* Daily Pedagogical Prompt of the Day (Day One prompt feature) */}
-      <div className="p-4 rounded-3xl bg-stone-50 dark:bg-stone-800/40 border border-stone-200/80 dark:border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-            <Lightbulb className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block">
-              Music Teacher Daily Prompt
-            </span>
-            <p className="text-xs sm:text-sm font-medium text-stone-800 dark:text-stone-200 italic">
-              "{PROMPTS[currentPromptIndex]}"
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-          <button
-            onClick={() => setCurrentPromptIndex((i) => (i + 1) % PROMPTS.length)}
-            className="px-2.5 py-1.5 rounded-xl bg-stone-200/60 dark:bg-stone-700 text-stone-600 dark:text-stone-300 text-xs font-semibold hover:bg-stone-300 transition-all"
-          >
-            Next Prompt
-          </button>
-          <button
-            onClick={handleApplyPrompt}
-            className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all"
-          >
-            Write Reflection
-          </button>
-        </div>
-      </div>
 
       {/* Search Bar + Filter by Tag & Starred */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

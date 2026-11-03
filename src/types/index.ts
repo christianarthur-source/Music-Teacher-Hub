@@ -218,6 +218,7 @@ export interface ResourceLink {
   driveType?: 'doc' | 'sheet' | 'slide' | 'folder' | 'pdf';
   isFavorite: boolean;
   lastUsed?: string;
+  thumbnailUrl?: string;
 }
 
 export interface InstrumentItem {
