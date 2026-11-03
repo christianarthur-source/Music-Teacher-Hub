@@ -53,6 +53,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ];
       if (hash.startsWith('visuals')) return 'visuals';
       if (hash.startsWith('tasks')) return 'tasks';
+      if (hash.startsWith('planner')) return 'planner';
       if (validViews.includes(hash)) return hash;
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get('view') as NavView;
@@ -78,7 +79,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'home', 'planner', 'tasks', 'calendar', 'tools', 'audio-studio',
         'seating', 'visuals', 'timer', 'resources', 'journal', 'youtube', 'settings'
       ];
-      if (validViews.includes(hash)) {
+      if (hash.startsWith('visuals')) {
+        setActiveViewState('visuals');
+      } else if (hash.startsWith('tasks')) {
+        setActiveViewState('tasks');
+      } else if (hash.startsWith('planner')) {
+        setActiveViewState('planner');
+      } else if (validViews.includes(hash)) {
         setActiveViewState(hash);
       }
     };
