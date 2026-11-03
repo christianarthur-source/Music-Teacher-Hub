@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { audioEngine } from '../../services/audioEngine';
+import { studioAudioEngine } from '../../services/pitchShifterAudio';
 import {
   generateRecorderAccompaniment,
   generateOrffGroove,
@@ -131,8 +132,33 @@ export const AudioStudioView: React.FC = () => {
     }
   }, [playbackRate]);
 
+  // Hook pitch shifter audio engine on track or mount
+  useEffect(() => {
+    if (audioRef.current) {
+      studioAudioEngine.init(audioRef.current);
+      studioAudioEngine.setPitch(pitchShift);
+    }
+  }, [currentTrackIndex, audioRef.current]);
+
+  // Handle Real-Time Pitch Shifting
+  const handlePitchChange = (newPitch: number) => {
+    const clamped = Math.max(-12, Math.min(12, newPitch));
+    setPitchShift(clamped);
+    studioAudioEngine.setPitch(clamped);
+    if (audioRef.current) {
+      studioAudioEngine.init(audioRef.current);
+      studioAudioEngine.unlock();
+    }
+    showToast(
+      clamped === 0
+        ? 'Pitch reset to original key'
+        : `Pitch shifted ${clamped > 0 ? '+' : ''}${clamped} semitones`,
+      'info'
+    );
+  };
+
   // Handle Play / Pause with robust AudioContext unlocking
-  const togglePlay = () => {
+  const togglePlay = async () => {
     audioEngine.unlockAudio();
 
     if (!audioRef.current || !currentTrack) {
@@ -144,6 +170,9 @@ export const AudioStudioView: React.FC = () => {
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
+      studioAudioEngine.init(audioRef.current);
+      await studioAudioEngine.unlock();
+
       audioRef.current
         .play()
         .then(() => {
@@ -650,31 +679,59 @@ export const AudioStudioView: React.FC = () => {
                 </div>
 
                 <div className="pt-2 border-t border-stone-200/60 dark:border-stone-800 flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                    Pitch Shift
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+                      Pitch Transpose
+                    </span>
+                    {pitchShift !== 0 && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                        {pitchShift * 100 > 0 ? `+${pitchShift * 100}¢` : `${pitchShift * 100}¢`}
+                      </span>
+                    )}
+                  </div>
                   <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                    {pitchShift > 0 ? `+${pitchShift}` : pitchShift} semitones
+                    {pitchShift === 0 ? 'Original Key' : `${pitchShift > 0 ? `+${pitchShift}` : pitchShift} semitones`}
                   </span>
                 </div>
-                <div className="flex items-center justify-between gap-1 text-xs font-mono font-bold">
+                <div className="grid grid-cols-5 gap-1 text-xs font-mono font-bold">
                   <button
-                    onClick={() => setPitchShift((p) => Math.max(-12, p - 1))}
-                    className="px-2 py-1 bg-white dark:bg-stone-800 rounded border border-stone-200 dark:border-stone-700"
+                    onClick={() => handlePitchChange(pitchShift - 2)}
+                    className="py-1 px-1.5 bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 rounded border border-stone-200 dark:border-stone-700 transition-all text-center"
+                    title="Transpose down whole step (-2 semitones)"
+                  >
+                    -2
+                  </button>
+                  <button
+                    onClick={() => handlePitchChange(pitchShift - 1)}
+                    className="py-1 px-1.5 bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 rounded border border-stone-200 dark:border-stone-700 transition-all text-center"
+                    title="Transpose down half step (-1 semitone)"
                   >
                     -1
                   </button>
                   <button
-                    onClick={() => setPitchShift(0)}
-                    className="px-2 py-1 bg-white dark:bg-stone-800 rounded border border-stone-200 dark:border-stone-700"
+                    onClick={() => handlePitchChange(0)}
+                    className={`py-1 px-1.5 rounded border transition-all text-center ${
+                      pitchShift === 0
+                        ? 'bg-stone-200 dark:bg-stone-700 text-stone-800 dark:text-stone-200 border-stone-300'
+                        : 'bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 border-stone-200 dark:border-stone-700'
+                    }`}
+                    title="Reset to original key"
                   >
-                    Reset
+                    0
                   </button>
                   <button
-                    onClick={() => setPitchShift((p) => Math.min(12, p + 1))}
-                    className="px-2 py-1 bg-white dark:bg-stone-800 rounded border border-stone-200 dark:border-stone-700"
+                    onClick={() => handlePitchChange(pitchShift + 1)}
+                    className="py-1 px-1.5 bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 rounded border border-stone-200 dark:border-stone-700 transition-all text-center"
+                    title="Transpose up half step (+1 semitone)"
                   >
                     +1
+                  </button>
+                  <button
+                    onClick={() => handlePitchChange(pitchShift + 2)}
+                    className="py-1 px-1.5 bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 rounded border border-stone-200 dark:border-stone-700 transition-all text-center"
+                    title="Transpose up whole step (+2 semitones)"
+                  >
+                    +2
                   </button>
                 </div>
               </div>

@@ -360,6 +360,22 @@ class StorageService {
     return newEvent;
   }
 
+  public addEvents(newEvents: Omit<CalendarEvent, 'id'>[]): number {
+    if (!newEvents || newEvents.length === 0) return 0;
+    const existing = this.getEvents();
+    const created: CalendarEvent[] = [];
+    let idx = 0;
+    const baseId = 'ev-' + Date.now().toString(36);
+    for (const item of newEvents) {
+      created.push({
+        ...item,
+        id: `${baseId}-${(idx++).toString(36)}`
+      });
+    }
+    this.saveEvents([...existing, ...created]);
+    return created.length;
+  }
+
   public updateEvent(id: string, updates: Partial<CalendarEvent>): void {
     const events = this.getEvents().map((e) => (e.id === id ? { ...e, ...updates } : e));
     this.saveEvents(events);

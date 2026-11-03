@@ -93,6 +93,18 @@ export const CalendarView: React.FC = () => {
     showToast('Event deleted', 'info');
   };
 
+  // Helper to infer category based on event text
+  const inferCategory = (title: string, desc: string): CalendarEvent['category'] => {
+    const combined = (title + ' ' + desc).toLowerCase();
+    if (combined.includes('rehearsal') || combined.includes('chorus') || combined.includes('choir')) return 'rehearsal';
+    if (combined.includes('concert') || combined.includes('performance') || combined.includes('festival') || combined.includes('informance') || combined.includes('holiday')) return 'concert';
+    if (combined.includes('assembly')) return 'assembly';
+    if (combined.includes('pd') || combined.includes('in-service') || combined.includes('conference') || combined.includes('workshop')) return 'pd';
+    if (combined.includes('meeting') || combined.includes('duty') || combined.includes('committee')) return 'meeting';
+    if (combined.includes('grade') || combined.includes('class') || combined.includes('music')) return 'class';
+    return 'concert';
+  };
+
   // Helper to format iCalendar timestamp (YYYYMMDDTHHMMSS or YYYYMMDD)
   const formatIcsDate = (val?: string): string => {
     if (!val) return new Date().toISOString().slice(0, 16);
@@ -142,20 +154,23 @@ export const CalendarView: React.FC = () => {
         }
         inEvent = false;
       } else if (inEvent) {
-        if (line.startsWith('SUMMARY:')) {
-          current.title = line.substring(8).trim();
-        } else if (line.startsWith('DTSTART')) {
-          const val = line.split(':')[1]?.trim();
+        const colonIdx = line.indexOf(':');
+        if (colonIdx === -1) continue;
+        const tag = line.slice(0, colonIdx);
+        const val = line.slice(colonIdx + 1).replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\n/g, ' ').trim();
+
+        if (tag === 'SUMMARY' || tag.startsWith('SUMMARY;')) {
+          current.title = val;
+        } else if (tag === 'DTSTART' || tag.startsWith('DTSTART;')) {
           current.startDate = formatIcsDate(val);
-        } else if (line.startsWith('DTEND')) {
-          const val = line.split(':')[1]?.trim();
+        } else if (tag === 'DTEND' || tag.startsWith('DTEND;')) {
           current.endDate = formatIcsDate(val);
-        } else if (line.startsWith('LOCATION:')) {
-          current.location = line.substring(9).trim();
-        } else if (line.startsWith('UID:')) {
-          current.uid = line.substring(4).trim();
-        } else if (line.startsWith('DESCRIPTION:')) {
-          current.description = line.substring(12).trim();
+        } else if (tag === 'LOCATION' || tag.startsWith('LOCATION;')) {
+          current.location = val;
+        } else if (tag === 'UID' || tag.startsWith('UID;')) {
+          current.uid = val;
+        } else if (tag === 'DESCRIPTION' || tag.startsWith('DESCRIPTION;')) {
+          current.description = val;
         }
       }
     }
@@ -188,7 +203,18 @@ export const CalendarView: React.FC = () => {
       }
 
       const existingEvents = storage.getEvents();
-      let importedCount = 0;
+      const toAdd: Omit<CalendarEvent, 'id'>[] = [];
+
+      const categoryColors: Record<CalendarEvent['category'], string> = {
+        class: '#0c87eb',
+        chorus: '#be123c',
+        rehearsal: '#be123c',
+        concert: '#d97706',
+        assembly: '#059669',
+        pd: '#7c3aed',
+        meeting: '#475569',
+        duty: '#475569'
+      };
 
       parsedList.forEach((item) => {
         // Deduplicate by title & startDate
@@ -197,24 +223,31 @@ export const CalendarView: React.FC = () => {
         );
 
         if (!exists && item.title && item.startDate) {
-          storage.addEvent({
+          const cat = inferCategory(item.title, item.description || '');
+          toAdd.push({
             title: item.title,
             startDate: item.startDate,
             endDate: item.endDate || item.startDate,
-            category: 'concert',
+            category: cat,
             location: item.location || 'School Auditorium',
-            color: '#d97706',
+            color: categoryColors[cat] || '#d97706',
             source: 'imported_ics'
           });
-          importedCount++;
         }
       });
 
+      if (toAdd.length === 0) {
+        showToast('All events in this calendar are already imported (no duplicates)', 'info');
+        setIsImportModalOpen(false);
+        return;
+      }
+
+      const count = storage.addEvents(toAdd);
       reloadData();
       setIsImportModalOpen(false);
       setImportUrl('');
       setImportIcsText('');
-      showToast(`Successfully imported ${importedCount} event(s)!`, 'success');
+      showToast(`Successfully imported ${count} event(s)!`, 'success');
     } catch (err) {
       console.error('ICS parse error:', err);
       showToast('Error parsing calendar file', 'error');
@@ -240,19 +273,53 @@ export const CalendarView: React.FC = () => {
     }
 
     setIsImporting(true);
+    let icsData = '';
+
+    // Step 1: Use local Vite dev server proxy (/api/calendar-proxy?url=...)
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-      const text = await res.text();
-      processIcsImport(text);
-    } catch (err) {
-      console.warn('Direct CORS fetch failed. Prompting user to paste file content.', err);
+      const proxyUrl = `/api/calendar-proxy?url=${encodeURIComponent(url)}`;
+      const res = await fetch(proxyUrl);
+      if (res.ok) {
+        icsData = await res.text();
+      }
+    } catch (e) {
+      console.warn('Local proxy attempt:', e);
+    }
+
+    // Step 2: Try public CORS proxy fallback (if local proxy unavailable)
+    if (!icsData) {
+      try {
+        const corsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        const res = await fetch(corsUrl);
+        if (res.ok) {
+          icsData = await res.text();
+        }
+      } catch (e) {
+        console.warn('Public proxy attempt:', e);
+      }
+    }
+
+    // Step 3: Direct fetch attempt (if provider allows CORS)
+    if (!icsData) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          icsData = await res.text();
+        }
+      } catch (e) {
+        console.warn('Direct fetch attempt:', e);
+      }
+    }
+
+    setIsImporting(false);
+
+    if (icsData && icsData.includes('BEGIN:VCALENDAR')) {
+      processIcsImport(icsData);
+    } else {
       showToast(
-        'Direct download blocked by calendar provider CORS. Please paste the .ics content or download and upload the file.',
+        'Direct download blocked by calendar provider. Please download the .ics file in your browser and upload it via Option 1.',
         'warning'
       );
-    } finally {
-      setIsImporting(false);
     }
   };
 
@@ -918,31 +985,49 @@ END:VCALENDAR`;
                 />
               </div>
 
-              <div className="flex items-center justify-between pt-2">
-                <button
-                  type="button"
-                  onClick={loadSampleSchoolCalendar}
-                  className="text-xs font-bold text-sky-600 dark:text-sky-400 hover:underline"
-                >
-                  ⚡ Load Sample District Calendar
-                </button>
-
-                <div className="flex gap-2">
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+                <span className="font-bold flex items-center gap-1.5">
+                  <span>💡</span>
+                  <span>Google & Apple Calendar Direct Feed Sync</span>
+                </span>
+                <p className="text-[11px] leading-relaxed">
+                  Paste any public or secret <strong>webcal://</strong> or <strong>https://</strong> iCal link from Google Calendar or Apple iCloud. The app proxies the feed and parses all events without CORS errors.
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
                   <button
                     type="button"
-                    onClick={() => setIsImportModalOpen(false)}
-                    className="px-4 py-2 text-xs font-semibold text-stone-600 dark:text-stone-300"
+                    onClick={() => {
+                      setImportUrl('https://calendar.google.com/calendar/ical/en.usa%23holiday%40group.v.calendar.google.com/public/basic.ics');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-white dark:bg-stone-800 border border-amber-300 dark:border-amber-700 text-[11px] font-bold text-amber-800 dark:text-amber-300 hover:bg-amber-100"
                   >
-                    Cancel
+                    Insert Google Calendar Feed URL
                   </button>
                   <button
-                    type="submit"
-                    disabled={isImporting}
-                    className="px-5 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-sm"
+                    type="button"
+                    onClick={loadSampleSchoolCalendar}
+                    className="px-2.5 py-1 rounded-lg bg-white dark:bg-stone-800 border border-amber-300 dark:border-amber-700 text-[11px] font-bold text-amber-800 dark:text-amber-300 hover:bg-amber-100"
                   >
-                    {isImporting ? 'Importing...' : 'Import Calendar'}
+                    Insert District Fine Arts Schedule
                   </button>
                 </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-stone-600 dark:text-stone-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isImporting}
+                  className="px-5 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-sm"
+                >
+                  {isImporting ? 'Syncing...' : 'Fetch & Import Calendar'}
+                </button>
               </div>
             </form>
           </div>
