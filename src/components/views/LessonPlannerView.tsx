@@ -240,7 +240,7 @@ export const LessonPlannerView: React.FC = () => {
           setAiStatusMessage('');
           return;
         }
-        setAiStatusMessage('Connecting to Anthropic Claude AI (Claude 3.5)...');
+        setAiStatusMessage('Connecting to Anthropic Claude AI (Claude Haiku 5.5)...');
         result = await generateClaudeLesson(aiPrompt, claudeKey.trim(), preferredGrade, preferredDuration);
         if (claudeKey.trim() !== preferences.claudeApiKey) {
           updatePreferences({ claudeApiKey: claudeKey.trim(), aiProvider: 'claude' });
@@ -797,7 +797,7 @@ export const LessonPlannerView: React.FC = () => {
                 }`}
               >
                 <Wand2 className="w-3.5 h-3.5 text-amber-500" />
-                <span>Anthropic Claude (Claude 3.5)</span>
+                <span>Anthropic Claude (Claude Haiku 5.5)</span>
               </button>
               <button
                 type="button"
@@ -900,7 +900,7 @@ export const LessonPlannerView: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-200">
                     <Key className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Anthropic Claude API Key (Claude 3.5)</span>
+                    <span>Anthropic Claude API Key (Claude Haiku 5.5)</span>
                   </div>
                   <a
                     href="https://console.anthropic.com/settings/keys"
@@ -920,7 +920,7 @@ export const LessonPlannerView: React.FC = () => {
                   className="w-full text-xs font-mono px-3 py-2 bg-white dark:bg-stone-900 border border-amber-200 dark:border-amber-700 rounded-xl text-stone-900 dark:text-white focus:outline-none focus:border-amber-500"
                 />
                 <p className="text-[10px] text-amber-800 dark:text-amber-300">
-                  Stored securely only in your browser local storage. Powers Claude 3.5 Haiku / Sonnet with deep Kodály & Orff pedagogical sequencing.
+                  Stored securely only in your browser local storage. Powers Claude Haiku 5.5 with deep Kodály & Orff pedagogical sequencing.
                 </p>
               </div>
             )}

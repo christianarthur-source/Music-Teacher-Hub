@@ -50,7 +50,7 @@ export const CalendarView: React.FC = () => {
   const [category, setCategory] = useState<CalendarEvent['category']>('class');
   const [startDate, setStartDate] = useState('2026-11-03T10:15');
   const [endDate, setEndDate] = useState('2026-11-03T10:55');
-  const [location, setLocation] = useState('Room 104');
+  const [location, setLocation] = useState('');
   const [selectedSubscriptionId, setSelectedSubscriptionId] = useState<string>('sub-primary');
 
   // Shared Link / ICS Import State
@@ -139,17 +139,10 @@ export const CalendarView: React.FC = () => {
     }
     let icsData = '';
     try {
-      const proxyUrl = `/api/calendar-proxy?url=${encodeURIComponent(url)}`;
+      const proxyUrl = `/api/hub/calendar?url=${encodeURIComponent(url)}`;
       const res = await fetch(proxyUrl);
       if (res.ok) icsData = await res.text();
     } catch {}
-    if (!icsData) {
-      try {
-        const corsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-        const res = await fetch(corsUrl);
-        if (res.ok) icsData = await res.text();
-      } catch {}
-    }
     if (icsData && icsData.includes('BEGIN:VCALENDAR')) {
       const parsedList = parseIcsText(icsData);
       const allEvents = storage.getEvents();
@@ -401,9 +394,9 @@ export const CalendarView: React.FC = () => {
     setIsImporting(true);
     let icsData = '';
 
-    // Step 1: Use local Vite dev server proxy (/api/calendar-proxy?url=...)
+    // Step 1: Fetch through the site's calendar helper (/api/hub/calendar?url=...)
     try {
-      const proxyUrl = `/api/calendar-proxy?url=${encodeURIComponent(url)}`;
+      const proxyUrl = `/api/hub/calendar?url=${encodeURIComponent(url)}`;
       const res = await fetch(proxyUrl);
       if (res.ok) {
         icsData = await res.text();
@@ -412,20 +405,7 @@ export const CalendarView: React.FC = () => {
       console.warn('Local proxy attempt:', e);
     }
 
-    // Step 2: Try public CORS proxy fallback (if local proxy unavailable)
-    if (!icsData) {
-      try {
-        const corsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-        const res = await fetch(corsUrl);
-        if (res.ok) {
-          icsData = await res.text();
-        }
-      } catch (e) {
-        console.warn('Public proxy attempt:', e);
-      }
-    }
-
-    // Step 3: Direct fetch attempt (if provider allows CORS)
+    // Step 2: Direct fetch attempt (if provider allows CORS)
     if (!icsData) {
       try {
         const res = await fetch(url);

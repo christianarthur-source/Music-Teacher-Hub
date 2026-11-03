@@ -1,212 +1,53 @@
 import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import type { IncomingMessage, ServerResponse } from 'http';
+import { HUB_API_ROUTES } from './server/routes.mjs';
 
-function calendarProxyPlugin(): Plugin {
+/**
+ * Runs the Hub's /api/hub/* handlers (server/*.mjs) inside the Vite dev server, so `npm run dev`
+ * behaves like the site's Cloudflare Worker. The handlers speak standard Request/Response;
+ * this adapter converts Node's req/res to and from them.
+ */
+function hubApiPlugin(): Plugin {
   return {
-    name: 'calendar-proxy',
+    name: 'hub-api',
     configureServer(server) {
-      server.middlewares.use('/api/calendar-proxy', async (req, res) => {
+      server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+        const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+        const handler = HUB_API_ROUTES[url.pathname as keyof typeof HUB_API_ROUTES];
+        if (!handler) return next();
+
         try {
-          const urlObj = new URL(req.url || '', `http://${req.headers.host}`);
-          let targetUrl = urlObj.searchParams.get('url');
-          if (!targetUrl) {
-            res.statusCode = 400;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ error: 'Missing url parameter' }));
-            return;
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(chunk as Buffer);
+          const hasBody = req.method !== 'GET' && req.method !== 'HEAD' && chunks.length > 0;
+
+          const headers = new Headers();
+          for (const [key, value] of Object.entries(req.headers)) {
+            if (typeof value === 'string') headers.set(key, value);
+            else if (Array.isArray(value)) headers.set(key, value.join(', '));
           }
 
-          if (targetUrl.startsWith('webcal://')) {
-            targetUrl = 'https://' + targetUrl.slice(9);
-          }
+          const response: Response = await handler(
+            new Request(url, { method: req.method, headers, body: hasBody ? Buffer.concat(chunks) : undefined })
+          );
 
-          const response = await fetch(targetUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)',
-              'Accept': 'text/calendar, text/plain, */*'
-            }
-          });
-
-          if (!response.ok) {
-            res.statusCode = response.status;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ error: `Remote calendar responded with HTTP ${response.status}` }));
-            return;
-          }
-
-          const icsText = await response.text();
-          res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-          res.end(icsText);
+          res.statusCode = response.status;
+          response.headers.forEach((value, key) => res.setHeader(key, value));
+          res.end(Buffer.from(await response.arrayBuffer()));
         } catch (err: any) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: err.message || 'Failed to fetch calendar' }));
+          res.end(JSON.stringify({ error: err?.message || 'Hub API error' }));
         }
-      });
-    }
-  };
-}
-
-function youtubeSearchPlugin(): Plugin {
-  return {
-    name: 'youtube-search-proxy',
-    configureServer(server) {
-      server.middlewares.use('/api/youtube-search', async (req, res) => {
-        try {
-          const urlObj = new URL(req.url || '', `http://${req.headers.host}`);
-          const q = urlObj.searchParams.get('q');
-          if (!q) {
-            res.statusCode = 400;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ error: 'Missing q query parameter' }));
-            return;
-          }
-
-          const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
-          const response = await fetch(ytUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept-Language': 'en-US,en;q=0.9',
-            }
-          });
-
-          if (!response.ok) {
-            res.statusCode = response.status;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ error: `YouTube responded with HTTP ${response.status}` }));
-            return;
-          }
-
-          const html = await response.text();
-          const marker = 'var ytInitialData = ';
-          let dataStr = '';
-          const idx = html.indexOf(marker);
-          if (idx !== -1) {
-            const start = idx + marker.length;
-            const end = html.indexOf(';</script>', start);
-            if (end !== -1) {
-              dataStr = html.slice(start, end);
-            }
-          }
-
-          const results: Array<{
-            id: string;
-            title: string;
-            channel: string;
-            duration: string;
-            thumbnail: string;
-            views: string;
-            publishedTime: string;
-          }> = [];
-
-          if (dataStr) {
-            try {
-              const data = JSON.parse(dataStr);
-              const contents = data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents;
-              if (contents && Array.isArray(contents)) {
-                for (const section of contents) {
-                  const itemSection = section?.itemSectionRenderer?.contents;
-                  if (itemSection && Array.isArray(itemSection)) {
-                    for (const item of itemSection) {
-                      const v = item?.videoRenderer;
-                      if (v && v.videoId) {
-                        results.push({
-                          id: v.videoId,
-                          title: v.title?.runs?.map((r: any) => r.text).join('') || v.title?.simpleText || 'Untitled Video',
-                          channel: v.ownerText?.runs?.map((r: any) => r.text).join('') || 'YouTube Channel',
-                          duration: v.lengthText?.simpleText || '',
-                          thumbnail: `https://img.youtube.com/vi/${v.videoId}/hqdefault.jpg`,
-                          views: v.viewCountText?.simpleText || '',
-                          publishedTime: v.publishedTimeText?.simpleText || ''
-                        });
-                      }
-                    }
-                  }
-                }
-              }
-            } catch (parseErr) {
-              console.error('Failed to parse ytInitialData', parseErr);
-            }
-          }
-
-          res.setHeader('Content-Type', 'application/json');
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.end(JSON.stringify({ results }));
-        } catch (err: any) {
-          res.statusCode = 500;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: err.message || 'YouTube search failed' }));
-        }
-      });
-    }
-  };
-}
-
-function claudeProxyPlugin(): Plugin {
-  return {
-    name: 'claude-proxy',
-    configureServer(server) {
-      server.middlewares.use('/api/claude-proxy', async (req, res) => {
-        if (req.method === 'OPTIONS') {
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, anthropic-version');
-          res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-          res.statusCode = 200;
-          res.end();
-          return;
-        }
-
-        if (req.method !== 'POST') {
-          res.statusCode = 405;
-          res.end(JSON.stringify({ error: 'Method not allowed' }));
-          return;
-        }
-
-        let body = '';
-        req.on('data', (chunk) => {
-          body += chunk;
-        });
-        req.on('end', async () => {
-          try {
-            const apiKey = req.headers['x-api-key'] as string;
-            if (!apiKey) {
-              res.statusCode = 400;
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ error: 'Missing x-api-key header' }));
-              return;
-            }
-
-            const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': apiKey,
-                'anthropic-version': '2023-06-01'
-              },
-              body
-            });
-
-            const text = await anthropicRes.text();
-            res.statusCode = anthropicRes.status;
-            res.setHeader('Content-Type', 'application/json');
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.end(text);
-          } catch (err: any) {
-            res.statusCode = 500;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ error: err.message || 'Claude proxy error' }));
-          }
-        });
       });
     }
   };
 }
 
 export default defineConfig({
-  base: './',
-  plugins: [react(), calendarProxyPlugin(), youtubeSearchPlugin(), claudeProxyPlugin()],
+  base: '/Hub/',
+  plugins: [react(), hubApiPlugin()],
   server: {
     port: 5173,
     host: true

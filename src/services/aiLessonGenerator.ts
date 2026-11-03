@@ -648,7 +648,7 @@ Generate the complete JSON elementary music lesson plan now. Return ONLY valid J
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-5-5',
         max_tokens: 2500,
         system: systemInstruction,
         messages: [{ role: 'user', content: userQuery }]
@@ -666,17 +666,17 @@ Generate the complete JSON elementary music lesson plan now. Return ONLY valid J
     lastError = err?.message || String(err);
   }
 
-  // 2. Try Local Proxy Fallback (if running under Vite dev server)
+  // 2. Fall back to the site's Claude helper (/api/hub/claude)
   if (!responseText) {
     try {
-      const proxyRes = await fetch('/api/claude-proxy', {
+      const proxyRes = await fetch('/api/hub/claude', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': apiKey.trim()
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022',
+          model: 'claude-haiku-5-5',
           max_tokens: 2500,
           system: systemInstruction,
           messages: [{ role: 'user', content: userQuery }]
