@@ -145,6 +145,7 @@ function youtubeSearchPlugin(): Plugin {
 }
 
 export default defineConfig({
+  base: './',
   plugins: [react(), calendarProxyPlugin(), youtubeSearchPlugin()],
   server: {
     port: 5173,
