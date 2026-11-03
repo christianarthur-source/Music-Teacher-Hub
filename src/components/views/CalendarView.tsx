@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { storage } from '../../services/storage';
-import { CalendarEvent } from '../../types';
+import { CalendarEvent, CalendarSubscription } from '../../types';
 import {
   Calendar as CalendarIcon,
   Plus,
@@ -19,17 +19,27 @@ import {
   List,
   Columns,
   Globe,
-  FileText
+  FileText,
+  Layers,
+  CalendarX,
+  UserMinus,
+  RefreshCw,
+  Check,
+  AlertCircle
 } from 'lucide-react';
 
 export const CalendarView: React.FC = () => {
   const { showToast } = useApp();
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [subscriptions, setSubscriptions] = useState<CalendarSubscription[]>([]);
   const [viewMode, setViewMode] = useState<'month' | 'week' | 'agenda'>('month');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [activeCalendarFilter, setActiveCalendarFilter] = useState<string>('all');
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isManageSubscriptionsOpen, setIsManageSubscriptionsOpen] = useState(false);
+  const [subscriptionToUnsubscribe, setSubscriptionToUnsubscribe] = useState<CalendarSubscription | null>(null);
   const [selectedDayEvents, setSelectedDayEvents] = useState<{ date: string; events: CalendarEvent[] } | null>(null);
 
   // Active Date for Month and Week Navigation
@@ -41,15 +51,19 @@ export const CalendarView: React.FC = () => {
   const [startDate, setStartDate] = useState('2026-11-03T10:15');
   const [endDate, setEndDate] = useState('2026-11-03T10:55');
   const [location, setLocation] = useState('Room 104');
+  const [selectedSubscriptionId, setSelectedSubscriptionId] = useState<string>('sub-primary');
 
   // Shared Link / ICS Import State
   const [importUrl, setImportUrl] = useState('');
   const [importIcsText, setImportIcsText] = useState('');
+  const [newSubName, setNewSubName] = useState('');
+  const [newSubColor, setNewSubColor] = useState('#d97706');
   const [isImporting, setIsImporting] = useState(false);
   const icsFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const reloadData = () => {
     setEvents(storage.getEvents());
+    setSubscriptions(storage.getSubscriptions());
   };
 
   useEffect(() => {
@@ -72,6 +86,7 @@ export const CalendarView: React.FC = () => {
       rehearsal: '#be123c'
     };
 
+    const sub = subscriptions.find((s) => s.id === selectedSubscriptionId);
     const created = storage.addEvent({
       title: title.trim(),
       startDate,
@@ -79,7 +94,9 @@ export const CalendarView: React.FC = () => {
       category,
       location,
       color: colors[category] || '#0c87eb',
-      source: 'local'
+      source: 'local',
+      sourceId: selectedSubscriptionId,
+      calendarName: sub?.name || 'Primary Schedule'
     });
 
     setIsAddEventOpen(false);
@@ -91,6 +108,77 @@ export const CalendarView: React.FC = () => {
     if (e) e.stopPropagation();
     storage.deleteEvent(id);
     showToast('Event deleted', 'info');
+  };
+
+  const getSubscriptionEventCount = (subId: string) => {
+    return events.filter((e) => (e.sourceId || 'sub-primary') === subId).length;
+  };
+
+  const handleConfirmUnsubscribe = () => {
+    if (!subscriptionToUnsubscribe) return;
+    const targetName = subscriptionToUnsubscribe.name;
+    const { removedEventsCount } = storage.deleteSubscription(subscriptionToUnsubscribe.id, true);
+    setSubscriptionToUnsubscribe(null);
+    reloadData();
+    showToast(`Unsubscribed from "${targetName}" and removed ${removedEventsCount} event(s)`, 'info');
+  };
+
+  const handleToggleSubscription = (subId: string) => {
+    const newState = storage.toggleSubscription(subId);
+    reloadData();
+    const sub = subscriptions.find((s) => s.id === subId);
+    showToast(`${sub?.name || 'Calendar'} is now ${newState ? 'visible' : 'hidden'}`, 'info');
+  };
+
+  const handleSyncSubscription = async (sub: CalendarSubscription) => {
+    if (!sub.url) return;
+    showToast(`Syncing ${sub.name}...`, 'info');
+    let url = sub.url.trim();
+    if (url.startsWith('webcal://')) {
+      url = 'https://' + url.slice(9);
+    }
+    let icsData = '';
+    try {
+      const proxyUrl = `/api/calendar-proxy?url=${encodeURIComponent(url)}`;
+      const res = await fetch(proxyUrl);
+      if (res.ok) icsData = await res.text();
+    } catch {}
+    if (!icsData) {
+      try {
+        const corsUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        const res = await fetch(corsUrl);
+        if (res.ok) icsData = await res.text();
+      } catch {}
+    }
+    if (icsData && icsData.includes('BEGIN:VCALENDAR')) {
+      const parsedList = parseIcsText(icsData);
+      const allEvents = storage.getEvents();
+      const otherEvents = allEvents.filter((e) => e.sourceId !== sub.id);
+      const newEvents: CalendarEvent[] = [];
+      parsedList.forEach((item, idx) => {
+        if (item.title && item.startDate) {
+          const cat = inferCategory(item.title, item.description || '');
+          newEvents.push({
+            id: `ev-${sub.id}-${idx}`,
+            title: item.title,
+            startDate: item.startDate,
+            endDate: item.endDate || item.startDate,
+            category: cat,
+            location: item.location || 'School Auditorium',
+            color: sub.color,
+            source: 'subscription',
+            sourceId: sub.id,
+            calendarName: sub.name
+          });
+        }
+      });
+      storage.saveEvents([...otherEvents, ...newEvents]);
+      storage.updateSubscription(sub.id, { lastSynced: new Date().toISOString() });
+      reloadData();
+      showToast(`Synced ${sub.name} (${newEvents.length} events updated)`, 'success');
+    } else {
+      showToast(`Unable to auto-sync feed from provider.`, 'warning');
+    }
   };
 
   // Helper to infer category based on event text
@@ -186,21 +274,57 @@ export const CalendarView: React.FC = () => {
     reader.onload = (event) => {
       const text = event.target?.result as string;
       if (text) {
-        processIcsImport(text);
+        const calTitle = newSubName.trim() || file.name.replace(/\.ics$/i, '');
+        processIcsImport(text, calTitle, newSubColor || '#059669');
       }
     };
     reader.readAsText(file);
     e.target.value = '';
   };
 
-  // Process and save parsed events with deduplication
-  const processIcsImport = (icsData: string) => {
+  // Process and save parsed events with deduplication and subscription tracking
+  const processIcsImport = (
+    icsData: string,
+    customName?: string,
+    customColor?: string,
+    customUrl?: string
+  ) => {
     try {
       const parsedList = parseIcsText(icsData);
       if (parsedList.length === 0) {
         showToast('No valid events found in calendar data', 'warning');
         return;
       }
+
+      // Detect calendar title from X-WR-CALNAME if available
+      let calName = customName?.trim() || newSubName.trim();
+      if (!calName) {
+        const calNameMatch = icsData.match(/X-WR-CALNAME:([^\r\n]+)/i);
+        if (calNameMatch && calNameMatch[1]) {
+          calName = calNameMatch[1].trim();
+        } else if (customUrl?.includes('holiday')) {
+          calName = 'Holidays in United States';
+        } else if (customUrl) {
+          calName = 'Subscribed Webcal Feed';
+        } else {
+          calName = 'Imported Calendar File';
+        }
+      }
+
+      const assignedColor = customColor || newSubColor || '#d97706';
+
+      // Create new Calendar Subscription
+      const newSub = storage.addSubscription({
+        name: calName,
+        description: customUrl
+          ? `Subscribed feed (${customUrl.slice(0, 40)}...)`
+          : `Imported calendar on ${new Date().toLocaleDateString()}`,
+        color: assignedColor,
+        sourceType: customUrl?.startsWith('webcal') ? 'apple' : customUrl ? 'google' : 'ics_file',
+        url: customUrl || '',
+        enabled: true,
+        lastSynced: new Date().toISOString()
+      });
 
       const existingEvents = storage.getEvents();
       const toAdd: Omit<CalendarEvent, 'id'>[] = [];
@@ -230,24 +354,26 @@ export const CalendarView: React.FC = () => {
             endDate: item.endDate || item.startDate,
             category: cat,
             location: item.location || 'School Auditorium',
-            color: categoryColors[cat] || '#d97706',
-            source: 'imported_ics'
+            color: categoryColors[cat] || assignedColor,
+            source: 'subscription',
+            sourceId: newSub.id,
+            calendarName: newSub.name
           });
         }
       });
 
       if (toAdd.length === 0) {
-        showToast('All events in this calendar are already imported (no duplicates)', 'info');
-        setIsImportModalOpen(false);
-        return;
+        showToast(`Subscribed to "${newSub.name}", but events were already imported`, 'info');
+      } else {
+        const count = storage.addEvents(toAdd);
+        showToast(`Subscribed to "${newSub.name}" and imported ${count} event(s)!`, 'success');
       }
 
-      const count = storage.addEvents(toAdd);
       reloadData();
       setIsImportModalOpen(false);
       setImportUrl('');
       setImportIcsText('');
-      showToast(`Successfully imported ${count} event(s)!`, 'success');
+      setNewSubName('');
     } catch (err) {
       console.error('ICS parse error:', err);
       showToast('Error parsing calendar file', 'error');
@@ -263,7 +389,7 @@ export const CalendarView: React.FC = () => {
     }
 
     if (importIcsText.trim()) {
-      processIcsImport(importIcsText);
+      processIcsImport(importIcsText, newSubName || 'Custom iCal Feed', newSubColor || '#7c3aed');
       return;
     }
 
@@ -314,7 +440,7 @@ export const CalendarView: React.FC = () => {
     setIsImporting(false);
 
     if (icsData && icsData.includes('BEGIN:VCALENDAR')) {
-      processIcsImport(icsData);
+      processIcsImport(icsData, newSubName || 'Subscribed Webcal Calendar', newSubColor || '#d97706', url);
     } else {
       showToast(
         'Direct download blocked by calendar provider. Please download the .ics file in your browser and upload it via Option 1.',
@@ -360,6 +486,7 @@ export const CalendarView: React.FC = () => {
     const sampleIcs = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//Sample District Calendar//EN
+X-WR-CALNAME:District Fine Arts Festival & All-County
 BEGIN:VEVENT
 UID:district-101@school.edu
 SUMMARY:District Fine Arts Festival & All-County Concert
@@ -385,7 +512,7 @@ LOCATION:Main Auditorium
 DESCRIPTION:Grade 4-5 general music ensembles & 6th grade chorus
 END:VEVENT
 END:VCALENDAR`;
-    processIcsImport(sampleIcs);
+    processIcsImport(sampleIcs, 'District Fine Arts Festival & All-County', '#d97706', 'webcal://district.k12.edu/fine-arts-schedule.ics');
   };
 
   // Navigation handlers
@@ -414,8 +541,18 @@ END:VCALENDAR`;
   };
 
   const filteredEvents = events.filter((e) => {
-    if (selectedCategory === 'all') return true;
-    return e.category === selectedCategory;
+    if (selectedCategory !== 'all' && e.category !== selectedCategory) {
+      return false;
+    }
+    const subId = e.sourceId || 'sub-primary';
+    if (activeCalendarFilter !== 'all' && subId !== activeCalendarFilter) {
+      return false;
+    }
+    const sub = subscriptions.find((s) => s.id === subId);
+    if (sub && !sub.enabled) {
+      return false;
+    }
+    return true;
   });
 
   // Calculate Month Grid Days
@@ -463,8 +600,17 @@ END:VCALENDAR`;
           </p>
         </div>
 
-        {/* Action Buttons: Import, Export, Add Event */}
+        {/* Action Buttons: Subscribed Calendars, Import, Export, Add Event */}
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setIsManageSubscriptionsOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
+            title="Manage Subscribed Calendars & Feeds"
+          >
+            <Layers className="w-4 h-4 text-amber-500" />
+            <span>Calendars ({subscriptions.length})</span>
+          </button>
+
           <button
             onClick={() => setIsImportModalOpen(true)}
             className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 text-xs font-bold flex items-center gap-1.5 transition-all"
@@ -585,6 +731,70 @@ END:VCALENDAR`;
             {chip.label}
           </button>
         ))}
+      </div>
+
+      {/* Calendar Subscription Feeds & Visibility Bar */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400 shrink-0 flex items-center gap-1">
+          <Layers className="w-3.5 h-3.5 text-amber-500" />
+          <span>Feeds:</span>
+        </span>
+        <button
+          onClick={() => setActiveCalendarFilter('all')}
+          className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 transition-all ${
+            activeCalendarFilter === 'all'
+              ? 'bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-900 shadow-xs'
+              : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 hover:bg-stone-200 dark:hover:bg-stone-700'
+          }`}
+        >
+          All Feeds ({events.length})
+        </button>
+        {subscriptions.map((sub) => {
+          const count = getSubscriptionEventCount(sub.id);
+          const isSelected = activeCalendarFilter === sub.id;
+          return (
+            <div
+              key={sub.id}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 transition-all border ${
+                !sub.enabled
+                  ? 'opacity-40 bg-stone-50 dark:bg-stone-900 border-stone-200 dark:border-stone-800 line-through'
+                  : isSelected
+                  ? 'bg-white dark:bg-stone-800 text-stone-900 dark:text-white border-stone-400 dark:border-stone-600 shadow-xs'
+                  : 'bg-stone-50 dark:bg-stone-800/60 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:bg-stone-100'
+              }`}
+            >
+              <button
+                onClick={() => handleToggleSubscription(sub.id)}
+                className="w-3 h-3 rounded-full shrink-0 flex items-center justify-center transition-transform hover:scale-125"
+                style={{ backgroundColor: sub.color }}
+                title={sub.enabled ? 'Click to hide this calendar' : 'Click to show this calendar'}
+              />
+              <button
+                onClick={() => setActiveCalendarFilter(activeCalendarFilter === sub.id ? 'all' : sub.id)}
+                className="font-medium hover:underline flex items-center gap-1"
+              >
+                <span>{sub.name}</span>
+                <span className="text-[10px] opacity-60">({count})</span>
+              </button>
+              {!sub.isBuiltIn && (
+                <button
+                  onClick={() => setSubscriptionToUnsubscribe(sub)}
+                  className="ml-1 p-0.5 text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 rounded transition-colors"
+                  title={`Unsubscribe from "${sub.name}"`}
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          );
+        })}
+        <button
+          onClick={() => setIsManageSubscriptionsOpen(true)}
+          className="px-2 py-1 text-xs text-brand-600 dark:text-brand-400 hover:underline font-semibold shrink-0 flex items-center gap-1"
+        >
+          <span>Manage Feeds</span>
+          <ChevronRight className="w-3 h-3" />
+        </button>
       </div>
 
       {/* 1. MONTH VIEW */}
@@ -943,6 +1153,40 @@ END:VCALENDAR`;
               </button>
             </div>
 
+            {/* Calendar Subscription Name & Customization */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200/80 dark:border-stone-700/80">
+              <div className="sm:col-span-2">
+                <label className="text-[11px] font-bold text-stone-500 uppercase block mb-1">
+                  Subscription Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={newSubName}
+                  onChange={(e) => setNewSubName(e.target.value)}
+                  placeholder="e.g. District Fine Arts, Grade 5 Band..."
+                  className="w-full text-xs px-3 py-2 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-stone-500 uppercase block mb-1">
+                  Badge Color
+                </label>
+                <div className="flex items-center gap-1.5 pt-0.5">
+                  {['#0c87eb', '#be123c', '#d97706', '#059669', '#7c3aed'].map((c) => (
+                    <button
+                      type="button"
+                      key={c}
+                      onClick={() => setNewSubColor(c)}
+                      className={`w-6 h-6 rounded-full border-2 transition-transform ${
+                        newSubColor === c ? 'scale-115 border-stone-900 dark:border-white shadow-xs' : 'border-transparent hover:scale-105'
+                      }`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {/* Option 1: Upload .ics file directly */}
             <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200/80 dark:border-stone-700/80 space-y-2">
               <span className="text-xs font-bold text-stone-700 dark:text-stone-300 block">
@@ -1115,6 +1359,23 @@ END:VCALENDAR`;
               />
             </div>
 
+            <div>
+              <label className="text-xs font-bold uppercase text-stone-400 block mb-1">
+                Calendar Feed
+              </label>
+              <select
+                value={selectedSubscriptionId}
+                onChange={(e) => setSelectedSubscriptionId(e.target.value)}
+                className="w-full text-xs px-3 py-2 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl font-medium"
+              >
+                {subscriptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} {s.isBuiltIn ? '(Primary)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
@@ -1131,6 +1392,209 @@ END:VCALENDAR`;
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Manage Calendars & Subscriptions Modal */}
+      {isManageSubscriptionsOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 max-w-xl w-full shadow-2xl border border-stone-200 dark:border-stone-800 space-y-5 animate-in fade-in max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-200 dark:border-stone-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-stone-900 dark:text-white">
+                    Calendar Subscriptions & Feeds
+                  </h3>
+                  <p className="text-xs text-stone-500 dark:text-stone-400">
+                    Manage connected calendars, toggle layers, sync feeds, or unsubscribe.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsManageSubscriptionsOpen(false)}
+                className="p-1 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* List of active subscriptions */}
+            <div className="space-y-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400 block">
+                Active Calendars ({subscriptions.length})
+              </span>
+
+              {subscriptions.map((sub) => {
+                const count = getSubscriptionEventCount(sub.id);
+                return (
+                  <div
+                    key={sub.id}
+                    className="p-3.5 sm:p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200/80 dark:border-stone-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all"
+                  >
+                    <div className="flex items-start gap-3 min-w-0">
+                      {/* Toggle Visibility Checkbox */}
+                      <button
+                        onClick={() => handleToggleSubscription(sub.id)}
+                        className="mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-all shadow-xs"
+                        style={{
+                          backgroundColor: sub.enabled ? sub.color : 'transparent',
+                          borderColor: sub.color
+                        }}
+                        title={sub.enabled ? 'Click to hide this calendar layer' : 'Click to show this calendar layer'}
+                      >
+                        {sub.enabled && <Check className="w-3.5 h-3.5 text-white stroke-[3]" />}
+                      </button>
+
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4
+                            className={`text-sm font-bold truncate ${
+                              sub.enabled ? 'text-stone-900 dark:text-white' : 'text-stone-400 line-through'
+                            }`}
+                          >
+                            {sub.name}
+                          </h4>
+                          {sub.isBuiltIn ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-sky-100 dark:bg-sky-950/80 text-sky-700 dark:text-sky-300 border border-sky-300/40">
+                              Primary Schedule
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300/40">
+                              Subscribed Feed
+                            </span>
+                          )}
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300">
+                            {count} {count === 1 ? 'event' : 'events'}
+                          </span>
+                        </div>
+
+                        {sub.description && (
+                          <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5 line-clamp-1">
+                            {sub.description}
+                          </p>
+                        )}
+
+                        {sub.lastSynced && (
+                          <p className="text-[10px] text-stone-400 dark:text-stone-500 mt-1">
+                            Last synced: {new Date(sub.lastSynced).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({new Date(sub.lastSynced).toLocaleDateString()})
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions: Sync and Unsubscribe */}
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                      {sub.url && (
+                        <button
+                          onClick={() => handleSyncSubscription(sub)}
+                          className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-stone-700 text-stone-700 dark:text-stone-200 hover:text-brand-600 hover:bg-stone-100 dark:hover:bg-stone-600 border border-stone-200 dark:border-stone-600 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs"
+                          title="Refresh / Re-sync feed from URL"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Sync</span>
+                        </button>
+                      )}
+
+                      {!sub.isBuiltIn ? (
+                        <button
+                          onClick={() => setSubscriptionToUnsubscribe(sub)}
+                          className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/80 text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs active:scale-95"
+                          title={`Unsubscribe from "${sub.name}" and remove all associated events`}
+                        >
+                          <UserMinus className="w-3.5 h-3.5" />
+                          <span>Unsubscribe</span>
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-stone-400 font-medium px-2 py-1">
+                          Protected
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Quick action to subscribe to a new calendar */}
+            <div className="pt-2 border-t border-stone-200 dark:border-stone-800 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsManageSubscriptionsOpen(false);
+                  setIsImportModalOpen(true);
+                }}
+                className="px-4 py-2 rounded-xl bg-brand-50 dark:bg-brand-950/60 hover:bg-brand-100 dark:hover:bg-brand-900/60 text-brand-700 dark:text-brand-300 text-xs font-bold border border-brand-200 dark:border-brand-800 flex items-center gap-1.5 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Subscribe to Another Calendar</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsManageSubscriptionsOpen(false)}
+                className="px-5 py-2 rounded-xl bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-bold shadow-sm"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unsubscribe Confirmation Modal */}
+      {subscriptionToUnsubscribe && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl border border-rose-200 dark:border-rose-900/60 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <CalendarX className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-stone-900 dark:text-white leading-tight">
+                  Unsubscribe from Calendar?
+                </h3>
+                <p className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                  {subscriptionToUnsubscribe.name}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-stone-50 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 text-xs text-stone-600 dark:text-stone-300 space-y-2">
+              <p>
+                Are you sure you want to unsubscribe from <strong>"{subscriptionToUnsubscribe.name}"</strong>?
+              </p>
+              <div className="flex items-center gap-2 p-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 font-semibold text-[11px]">
+                <Trash2 className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                <span>
+                  This will remove the calendar subscription and permanently delete all{' '}
+                  <strong>{getSubscriptionEventCount(subscriptionToUnsubscribe.id)} scheduled events</strong> from your calendar.
+                </span>
+              </div>
+              <p className="text-[11px] text-stone-400">
+                You can re-subscribe anytime using a webcal link or .ics file.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setSubscriptionToUnsubscribe(null)}
+                className="px-4 py-2 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmUnsubscribe}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1.5"
+              >
+                <UserMinus className="w-4 h-4" />
+                <span>Unsubscribe & Remove Events</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

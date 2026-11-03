@@ -15,6 +15,9 @@ export interface UserPreferences {
   googleDriveClientId?: string;
   googleCalendarConnected: boolean;
   aiApiKey?: string;
+  aiProvider?: 'builtin' | 'claude' | 'gemini';
+  claudeApiKey?: string;
+  geminiApiKey?: string;
   pinnedNavigation: string[];
 }
 
@@ -117,8 +120,22 @@ export interface CalendarEvent {
   location?: string;
   grade?: GradeLevel;
   color?: string;
-  source: 'local' | 'imported_ics' | 'google';
+  source: 'local' | 'imported_ics' | 'google' | 'subscription';
   sourceId?: string;
+  calendarName?: string;
+}
+
+export interface CalendarSubscription {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  sourceType: 'local' | 'ics_url' | 'ics_file' | 'google' | 'apple';
+  url?: string;
+  enabled: boolean;
+  eventCount?: number;
+  lastSynced?: string;
+  isBuiltIn?: boolean;
 }
 
 export interface ChorusSong {

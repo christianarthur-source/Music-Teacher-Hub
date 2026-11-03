@@ -6,6 +6,7 @@ import {
   LessonPlan,
   ClassSection,
   CalendarEvent,
+  CalendarSubscription,
   ChorusSong,
   ConcertProgram,
   SeatingChart,
@@ -26,6 +27,9 @@ export const INITIAL_PREFERENCES: UserPreferences = {
   metronomeSound: 'woodblock',
   tunerRefA4: 440,
   googleCalendarConnected: false,
+  aiProvider: 'builtin',
+  claudeApiKey: '',
+  geminiApiKey: '',
   pinnedNavigation: ['home', 'planner', 'tasks', 'tools', 'visuals', 'audio-studio']
 };
 
@@ -716,6 +720,30 @@ export const INITIAL_CONCERT: ConcertProgram = {
   ]
 };
 
+export const INITIAL_CALENDAR_SUBSCRIPTIONS: CalendarSubscription[] = [
+  {
+    id: 'sub-primary',
+    name: 'Lincoln Elementary Teaching Schedule',
+    description: 'Primary general music classes and 6th grade chorus rehearsals',
+    color: '#0c87eb',
+    sourceType: 'local',
+    enabled: true,
+    isBuiltIn: true,
+    lastSynced: '2026-11-03T08:00:00'
+  },
+  {
+    id: 'sub-district',
+    name: 'District Fine Arts & Concerts',
+    description: 'District performing arts festivals, school assemblies, and annual concerts',
+    color: '#d97706',
+    sourceType: 'apple',
+    url: 'webcal://district.k12.edu/fine-arts-schedule.ics',
+    enabled: true,
+    isBuiltIn: false,
+    lastSynced: '2026-11-03T07:30:00'
+  }
+];
+
 export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [
   {
     id: 'ev-1',
@@ -726,7 +754,9 @@ export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [
     location: 'Auditorium Stage',
     grade: 'Chorus',
     color: '#be123c',
-    source: 'local'
+    source: 'local',
+    sourceId: 'sub-primary',
+    calendarName: 'Lincoln Elementary Teaching Schedule'
   },
   {
     id: 'ev-2',
@@ -737,7 +767,9 @@ export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [
     location: 'Room 104',
     grade: '2',
     color: '#0c87eb',
-    source: 'local'
+    source: 'local',
+    sourceId: 'sub-primary',
+    calendarName: 'Lincoln Elementary Teaching Schedule'
   },
   {
     id: 'ev-3',
@@ -748,7 +780,9 @@ export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [
     location: 'Room 104',
     grade: '4',
     color: '#0c87eb',
-    source: 'local'
+    source: 'local',
+    sourceId: 'sub-primary',
+    calendarName: 'Lincoln Elementary Teaching Schedule'
   },
   {
     id: 'ev-4',
@@ -758,7 +792,9 @@ export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [
     category: 'pd',
     location: 'District Music Office / Zoom',
     color: '#7c3aed',
-    source: 'local'
+    source: 'local',
+    sourceId: 'sub-primary',
+    calendarName: 'Lincoln Elementary Teaching Schedule'
   },
   {
     id: 'ev-5',
@@ -769,7 +805,9 @@ export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [
     location: 'Gymnasium',
     grade: 'Chorus',
     color: '#d97706',
-    source: 'local'
+    source: 'subscription',
+    sourceId: 'sub-district',
+    calendarName: 'District Fine Arts & Concerts'
   },
   {
     id: 'ev-6',
@@ -780,7 +818,9 @@ export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [
     location: 'Auditorium',
     grade: 'Chorus',
     color: '#be123c',
-    source: 'local'
+    source: 'subscription',
+    sourceId: 'sub-district',
+    calendarName: 'District Fine Arts & Concerts'
   },
   {
     id: 'ev-7',
@@ -791,7 +831,9 @@ export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [
     location: 'Auditorium',
     grade: 'Chorus',
     color: '#be123c',
-    source: 'local'
+    source: 'subscription',
+    sourceId: 'sub-district',
+    calendarName: 'District Fine Arts & Concerts'
   }
 ];
 

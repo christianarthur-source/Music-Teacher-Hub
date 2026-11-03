@@ -6,6 +6,9 @@ export interface GenerateLessonOptions {
   grade?: GradeLevel;
   durationMinutes?: number;
   apiKey?: string;
+  provider?: 'builtin' | 'claude' | 'gemini';
+  claudeApiKey?: string;
+  geminiApiKey?: string;
 }
 
 export interface GeneratedLessonResult {
@@ -587,4 +590,175 @@ Generate the complete JSON elementary music lesson plan now.`;
     assessmentStrategy: parsed.assessmentStrategy || 'Formative observation during ensemble play.',
     differentiationNotes: parsed.differentiationNotes || 'Provide visual cues and peer support.'
   };
+}
+
+// -------------------------------------------------------------
+// 3. Live Anthropic Claude API Integration
+// -------------------------------------------------------------
+export async function generateClaudeLesson(
+  prompt: string,
+  apiKey: string,
+  preferredGrade?: GradeLevel,
+  preferredDuration?: number
+): Promise<GeneratedLessonResult> {
+  const systemInstruction = `You are an expert Master Elementary General Music Educator (K-6) and Choral Director with deep pedagogical expertise in Kodály, Orff-Schulwerk, Dalcroze, and Feierabend First Steps in Music.
+Create an authentic, practical, standards-aligned music lesson plan based on the user's prompt.
+The lesson plan must be detailed, age-appropriate, musically sound, and ready to teach from a rolling music cart or classroom.
+Ensure activity step durations sum EXACTLY to the specified durationMinutes.
+Respond ONLY with a valid JSON object matching this schema (do NOT include markdown code fences or conversational text):
+{
+  "title": "string",
+  "grade": "K" | "1" | "2" | "3" | "4" | "5" | "6" | "Chorus",
+  "unit": "string",
+  "durationMinutes": number,
+  "overview": "string",
+  "objectives": ["string", "string"],
+  "musicalConcepts": ["string", "string"],
+  "standards": ["MU:Cr1.1.X", "MU:Pr4.2.X", "MU:Re7.2.X"],
+  "materialsNeeded": ["string"],
+  "activities": [
+    {
+      "title": "string",
+      "durationMinutes": number,
+      "musicalConcept": "string",
+      "description": "string"
+    }
+  ],
+  "assessmentStrategy": "string",
+  "differentiationNotes": "string"
+}`;
+
+  const userQuery = `Prompt: "${prompt}"
+${preferredGrade && preferredGrade !== 'All' ? `Target Grade: Grade ${preferredGrade}` : ''}
+${preferredDuration ? `Target Duration: ${preferredDuration} minutes` : ''}
+
+Generate the complete JSON elementary music lesson plan now. Return ONLY valid JSON.`;
+
+  let responseText = '';
+  let lastError = '';
+
+  // 1. Try Direct Anthropic Messages API (with direct browser access header)
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey.trim(),
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 2500,
+        system: systemInstruction,
+        messages: [{ role: 'user', content: userQuery }]
+      })
+    });
+
+    if (response.ok) {
+      const json = await response.json();
+      responseText = json?.content?.[0]?.text || '';
+    } else {
+      const err = await response.text();
+      lastError = `Claude API error (${response.status}): ${err}`;
+    }
+  } catch (err: any) {
+    lastError = err?.message || String(err);
+  }
+
+  // 2. Try Local Proxy Fallback (if running under Vite dev server)
+  if (!responseText) {
+    try {
+      const proxyRes = await fetch('/api/claude-proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey.trim()
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-haiku-20241022',
+          max_tokens: 2500,
+          system: systemInstruction,
+          messages: [{ role: 'user', content: userQuery }]
+        })
+      });
+      if (proxyRes.ok) {
+        const json = await proxyRes.json();
+        responseText = json?.content?.[0]?.text || '';
+      }
+    } catch {}
+  }
+
+  if (!responseText) {
+    throw new Error(lastError || 'Failed to connect to Claude API. Please check your Anthropic API key.');
+  }
+
+  // Parse JSON
+  let cleaned = responseText.trim();
+  if (cleaned.startsWith('```json')) cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '').trim();
+  else if (cleaned.startsWith('```')) cleaned = cleaned.replace(/^```/, '').replace(/```$/, '').trim();
+
+  const parsed = JSON.parse(cleaned);
+
+  // Validate critical fields
+  const validGrades: GradeLevel[] = ['K', '1', '2', '3', '4', '5', '6', 'Chorus'];
+  const grade: GradeLevel = validGrades.includes(parsed.grade) ? parsed.grade : preferredGrade || '3';
+  const durationMinutes: number = typeof parsed.durationMinutes === 'number' && parsed.durationMinutes > 0 ? parsed.durationMinutes : preferredDuration || 35;
+
+  return {
+    title: parsed.title || 'Elementary Music Lesson',
+    grade,
+    unit: parsed.unit || 'General Music Curriculum',
+    durationMinutes,
+    overview: parsed.overview || prompt,
+    objectives: Array.isArray(parsed.objectives) ? parsed.objectives : ['Perform rhythms with accurate steady pulse.'],
+    musicalConcepts: Array.isArray(parsed.musicalConcepts) ? parsed.musicalConcepts : ['Beat', 'Rhythm'],
+    standards: Array.isArray(parsed.standards) ? parsed.standards : [`MU:Pr4.2.${grade === 'Chorus' ? '6' : grade}`],
+    materialsNeeded: Array.isArray(parsed.materialsNeeded) ? parsed.materialsNeeded : ['Smart Board', 'Percussion Instruments'],
+    activities: Array.isArray(parsed.activities)
+      ? parsed.activities.map((a: any) => ({
+          title: a.title || 'Musical Activity',
+          durationMinutes: typeof a.durationMinutes === 'number' ? a.durationMinutes : 5,
+          musicalConcept: a.musicalConcept || 'Music Making',
+          description: a.description || ''
+        }))
+      : [
+          {
+            title: 'Warmup',
+            durationMinutes: 5,
+            musicalConcept: 'Preparation',
+            description: 'Vocal and physical warmup.'
+          }
+        ],
+    assessmentStrategy: parsed.assessmentStrategy || 'Formative observation during ensemble play.',
+    differentiationNotes: parsed.differentiationNotes || 'Provide visual cues and peer support.'
+  };
+}
+
+// -------------------------------------------------------------
+// 4. Unified Lesson Generator Router
+// -------------------------------------------------------------
+export async function generateLessonPlan(options: GenerateLessonOptions): Promise<GeneratedLessonResult> {
+  const provider = options.provider || (options.claudeApiKey ? 'claude' : options.geminiApiKey || options.apiKey ? 'gemini' : 'builtin');
+
+  if (provider === 'claude' && (options.claudeApiKey || options.apiKey)) {
+    return generateClaudeLesson(
+      options.prompt,
+      options.claudeApiKey || options.apiKey!,
+      options.grade,
+      options.durationMinutes
+    );
+  }
+
+  if (provider === 'gemini' && (options.geminiApiKey || options.apiKey)) {
+    return generateGeminiLesson(
+      options.prompt,
+      options.geminiApiKey || options.apiKey!,
+      options.grade,
+      options.durationMinutes
+    );
+  }
+
+  // Fallback to Instant Built-in Pedagogical Music Engine
+  return Promise.resolve(generatePedagogicalLesson(options.prompt, options.grade, options.durationMinutes));
 }

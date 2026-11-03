@@ -144,9 +144,69 @@ function youtubeSearchPlugin(): Plugin {
   };
 }
 
+function claudeProxyPlugin(): Plugin {
+  return {
+    name: 'claude-proxy',
+    configureServer(server) {
+      server.middlewares.use('/api/claude-proxy', async (req, res) => {
+        if (req.method === 'OPTIONS') {
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key, anthropic-version');
+          res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+          res.statusCode = 200;
+          res.end();
+          return;
+        }
+
+        if (req.method !== 'POST') {
+          res.statusCode = 405;
+          res.end(JSON.stringify({ error: 'Method not allowed' }));
+          return;
+        }
+
+        let body = '';
+        req.on('data', (chunk) => {
+          body += chunk;
+        });
+        req.on('end', async () => {
+          try {
+            const apiKey = req.headers['x-api-key'] as string;
+            if (!apiKey) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'Missing x-api-key header' }));
+              return;
+            }
+
+            const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01'
+              },
+              body
+            });
+
+            const text = await anthropicRes.text();
+            res.statusCode = anthropicRes.status;
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.end(text);
+          } catch (err: any) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: err.message || 'Claude proxy error' }));
+          }
+        });
+      });
+    }
+  };
+}
+
 export default defineConfig({
   base: './',
-  plugins: [react(), calendarProxyPlugin(), youtubeSearchPlugin()],
+  plugins: [react(), calendarProxyPlugin(), youtubeSearchPlugin(), claudeProxyPlugin()],
   server: {
     port: 5173,
     host: true

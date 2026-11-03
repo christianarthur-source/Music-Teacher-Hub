@@ -29,7 +29,9 @@ export const SettingsView: React.FC = () => {
   const [roomNumber, setRoomNumber] = useState(preferences.roomNumber);
   const [defaultDuration, setDefaultDuration] = useState(preferences.defaultClassDuration || 40);
   const [driveClientId, setDriveClientId] = useState(preferences.googleDriveClientId || '');
-  const [aiApiKey, setAiApiKey] = useState(preferences.aiApiKey || '');
+  const [aiProvider, setAiProvider] = useState<'builtin' | 'claude' | 'gemini'>(preferences.aiProvider || 'builtin');
+  const [claudeApiKey, setClaudeApiKey] = useState(preferences.claudeApiKey || '');
+  const [geminiApiKey, setGeminiApiKey] = useState(preferences.geminiApiKey || preferences.aiApiKey || '');
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +42,10 @@ export const SettingsView: React.FC = () => {
       roomNumber: roomNumber.trim(),
       defaultClassDuration: Number(defaultDuration) || 40,
       googleDriveClientId: driveClientId.trim(),
-      aiApiKey: aiApiKey.trim()
+      aiProvider,
+      claudeApiKey: claudeApiKey.trim(),
+      geminiApiKey: geminiApiKey.trim(),
+      aiApiKey: geminiApiKey.trim() // backwards compatibility
     });
     showToast('Preferences updated successfully', 'success');
   };
@@ -239,10 +244,74 @@ export const SettingsView: React.FC = () => {
           </p>
         </div>
 
-        <div className="pt-2 space-y-2">
+        {/* Provider Switcher */}
+        <div className="space-y-2 pt-1">
+          <label className="text-xs font-bold uppercase text-stone-400 block">
+            Default AI Model Provider
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {[
+              { id: 'builtin', name: 'Built-in Pedagogical AI', desc: 'Instant & Offline (No key needed)', badge: 'Free & Local' },
+              { id: 'claude', name: 'Anthropic Claude', desc: 'Claude 3.5 Haiku / Sonnet', badge: 'API Key' },
+              { id: 'gemini', name: 'Google Gemini', desc: 'Gemini 2.0 / 1.5 Flash', badge: 'API Key' }
+            ].map((p) => (
+              <button
+                type="button"
+                key={p.id}
+                onClick={() => setAiProvider(p.id as any)}
+                className={`p-3 rounded-2xl border text-left transition-all ${
+                  aiProvider === p.id
+                    ? 'bg-brand-50/80 dark:bg-brand-950/40 border-brand-500 text-brand-900 dark:text-brand-100 shadow-sm'
+                    : 'bg-stone-50 dark:bg-stone-800/60 border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 hover:bg-stone-100'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold">{p.name}</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-semibold bg-stone-200/80 dark:bg-stone-700 text-stone-600 dark:text-stone-300">
+                    {p.badge}
+                  </span>
+                </div>
+                <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5 line-clamp-1">
+                  {p.desc}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Anthropic Claude API Key */}
+        <div className="pt-2 space-y-1.5">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold uppercase text-stone-400 block">
-              Optional Google Gemini API Key (for Live AI Generation)
+              Anthropic Claude API Key (for Claude 3.5)
+            </label>
+            <a
+              href="https://console.anthropic.com/settings/keys"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-brand-600 dark:text-brand-400 underline hover:text-brand-800 flex items-center gap-1 font-medium"
+            >
+              <span>Get Anthropic Claude key</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+          <input
+            type="password"
+            value={claudeApiKey}
+            onChange={(e) => setClaudeApiKey(e.target.value)}
+            placeholder="sk-ant-api03-..."
+            className="w-full text-xs font-mono px-3.5 py-2.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl"
+          />
+          <p className="text-[11px] text-stone-400">
+            Enables high-precision music lesson generation, Kodály sequencing, Orff instrumentation, and differentiated instruction via Claude 3.5.
+          </p>
+        </div>
+
+        {/* Google Gemini API Key */}
+        <div className="pt-2 space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold uppercase text-stone-400 block">
+              Google Gemini API Key
             </label>
             <a
               href="https://aistudio.google.com/app/apikey"
@@ -250,19 +319,19 @@ export const SettingsView: React.FC = () => {
               rel="noopener noreferrer"
               className="text-xs text-blue-600 dark:text-blue-400 underline hover:text-blue-800 flex items-center gap-1 font-medium"
             >
-              <span>Get a free key at Google AI Studio</span>
+              <span>Get free key at Google AI Studio</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           </div>
           <input
             type="password"
-            value={aiApiKey}
-            onChange={(e) => setAiApiKey(e.target.value)}
+            value={geminiApiKey}
+            onChange={(e) => setGeminiApiKey(e.target.value)}
             placeholder="AIzaSy..."
             className="w-full text-xs font-mono px-3.5 py-2.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl"
           />
           <p className="text-[11px] text-stone-400">
-            When provided, you can toggle between the instant Built-In Music Engine and direct Google Gemini AI inside the Lesson Planner assistant.
+            Used when Google Gemini Live AI is selected in the Lesson Planner assistant.
           </p>
         </div>
       </div>

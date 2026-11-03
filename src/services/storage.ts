@@ -6,6 +6,7 @@ import {
   LessonPlan,
   ClassSection,
   CalendarEvent,
+  CalendarSubscription,
   ChorusSong,
   ConcertProgram,
   SeatingChart,
@@ -25,6 +26,7 @@ import {
   INITIAL_CHORUS_SONGS,
   INITIAL_CONCERT,
   INITIAL_CALENDAR_EVENTS,
+  INITIAL_CALENDAR_SUBSCRIPTIONS,
   INITIAL_SEATING_CHARTS,
   INITIAL_JOURNAL_ENTRIES,
   INITIAL_RESOURCES,
@@ -40,6 +42,7 @@ const STORAGE_KEYS = {
   LESSONS: 'mth_lessons',
   CLASSES: 'mth_classes',
   EVENTS: 'mth_events',
+  CALENDAR_SUBSCRIPTIONS: 'mth_calendar_subscriptions',
   CHORUS_SONGS: 'mth_chorus_songs',
   CONCERTS: 'mth_concerts',
   SEATING_CHARTS: 'mth_seating_charts',
@@ -418,6 +421,76 @@ class StorageService {
     this.saveEvents(events);
   }
 
+  // Calendar Subscriptions
+  public getSubscriptions(): CalendarSubscription[] {
+    return this.getItem(STORAGE_KEYS.CALENDAR_SUBSCRIPTIONS, INITIAL_CALENDAR_SUBSCRIPTIONS);
+  }
+
+  public saveSubscriptions(subs: CalendarSubscription[]): void {
+    this.setItem(STORAGE_KEYS.CALENDAR_SUBSCRIPTIONS, subs);
+  }
+
+  public addSubscription(sub: Omit<CalendarSubscription, 'id'>): CalendarSubscription {
+    const newSub: CalendarSubscription = {
+      ...sub,
+      id: 'sub-' + Date.now().toString(36)
+    };
+    const subs = this.getSubscriptions();
+    this.saveSubscriptions([...subs, newSub]);
+    return newSub;
+  }
+
+  public updateSubscription(id: string, updates: Partial<CalendarSubscription>): void {
+    const subs = this.getSubscriptions().map((s) => (s.id === id ? { ...s, ...updates } : s));
+    this.saveSubscriptions(subs);
+  }
+
+  public toggleSubscription(id: string): boolean {
+    const subs = this.getSubscriptions();
+    let newStatus = true;
+    const updated = subs.map((s) => {
+      if (s.id === id) {
+        newStatus = !s.enabled;
+        return { ...s, enabled: newStatus };
+      }
+      return s;
+    });
+    this.saveSubscriptions(updated);
+    return newStatus;
+  }
+
+  /**
+   * Unsubscribe from a calendar feed.
+   * If removeEvents is true (default), all events belonging to this calendar subscription (sourceId === id)
+   * are permanently removed from the user's schedule.
+   */
+  public deleteSubscription(
+    id: string,
+    removeEvents: boolean = true
+  ): { removedSubscription: CalendarSubscription | null; removedEventsCount: number } {
+    const subs = this.getSubscriptions();
+    const target = subs.find((s) => s.id === id) || null;
+    const remainingSubs = subs.filter((s) => s.id !== id);
+    this.saveSubscriptions(remainingSubs);
+
+    let removedCount = 0;
+    if (removeEvents) {
+      const events = this.getEvents();
+      const filteredEvents = events.filter((e) => {
+        if (e.sourceId === id) {
+          removedCount++;
+          return false;
+        }
+        return true;
+      });
+      if (removedCount > 0) {
+        this.saveEvents(filteredEvents);
+      }
+    }
+
+    return { removedSubscription: target, removedEventsCount: removedCount };
+  }
+
   // Chorus Songs
   public getChorusSongs(): ChorusSong[] {
     return this.getItem(STORAGE_KEYS.CHORUS_SONGS, INITIAL_CHORUS_SONGS);
@@ -599,6 +672,7 @@ class StorageService {
       lessons: this.getLessonPlans(),
       classes: this.getClasses(),
       events: this.getEvents(),
+      calendarSubscriptions: this.getSubscriptions(),
       chorusSongs: this.getChorusSongs(),
       concerts: this.getConcerts(),
       seatingCharts: this.getSeatingCharts(),
@@ -620,6 +694,7 @@ class StorageService {
       if (data.lessons) this.setItem(STORAGE_KEYS.LESSONS, data.lessons);
       if (data.classes) this.setItem(STORAGE_KEYS.CLASSES, data.classes);
       if (data.events) this.setItem(STORAGE_KEYS.EVENTS, data.events);
+      if (data.calendarSubscriptions) this.setItem(STORAGE_KEYS.CALENDAR_SUBSCRIPTIONS, data.calendarSubscriptions);
       if (data.chorusSongs) this.setItem(STORAGE_KEYS.CHORUS_SONGS, data.chorusSongs);
       if (data.concerts) this.setItem(STORAGE_KEYS.CONCERTS, data.concerts);
       if (data.seatingCharts) this.setItem(STORAGE_KEYS.SEATING_CHARTS, data.seatingCharts);

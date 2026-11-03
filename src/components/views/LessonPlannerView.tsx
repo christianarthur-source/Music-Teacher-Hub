@@ -6,6 +6,7 @@ import { NYS_MUSIC_STANDARDS } from '../../services/nysStandards';
 import {
   generatePedagogicalLesson,
   generateGeminiLesson,
+  generateClaudeLesson,
   GeneratedLessonResult
 } from '../../services/aiLessonGenerator';
 import {
@@ -48,8 +49,9 @@ export const LessonPlannerView: React.FC = () => {
   const [aiPrompt, setAiPrompt] = useState('Create a 30-minute second-grade lesson on steady beat vs rhythm of the words using rhythm sticks and Kodály Ta & Ti-Ti syllables.');
   const [aiGrade, setAiGrade] = useState<string>('auto');
   const [aiDuration, setAiDuration] = useState<number>(preferences.defaultClassDuration || 35);
-  const [aiEngine, setAiEngine] = useState<'builtin' | 'gemini'>('builtin');
-  const [apiKey, setApiKey] = useState(preferences.aiApiKey || '');
+  const [aiEngine, setAiEngine] = useState<'builtin' | 'claude' | 'gemini'>(preferences.aiProvider || 'builtin');
+  const [claudeKey, setClaudeKey] = useState(preferences.claudeApiKey || '');
+  const [geminiKey, setGeminiKey] = useState(preferences.geminiApiKey || preferences.aiApiKey || '');
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiStatusMessage, setAiStatusMessage] = useState('');
 
@@ -231,14 +233,30 @@ export const LessonPlannerView: React.FC = () => {
 
       let result: GeneratedLessonResult;
 
-      if (aiEngine === 'gemini') {
-        if (!apiKey.trim()) {
+      if (aiEngine === 'claude') {
+        if (!claudeKey.trim()) {
+          showToast('Please enter an Anthropic Claude API key or switch to Built-in Pedagogical AI.', 'error');
+          setIsGenerating(false);
+          setAiStatusMessage('');
+          return;
+        }
+        setAiStatusMessage('Connecting to Anthropic Claude AI (Claude 3.5)...');
+        result = await generateClaudeLesson(aiPrompt, claudeKey.trim(), preferredGrade, preferredDuration);
+        if (claudeKey.trim() !== preferences.claudeApiKey) {
+          updatePreferences({ claudeApiKey: claudeKey.trim(), aiProvider: 'claude' });
+        }
+      } else if (aiEngine === 'gemini') {
+        if (!geminiKey.trim()) {
           showToast('Please enter a Google Gemini API key or switch to Built-in Pedagogical AI.', 'error');
           setIsGenerating(false);
+          setAiStatusMessage('');
           return;
         }
         setAiStatusMessage('Connecting to Google Gemini AI...');
-        result = await generateGeminiLesson(aiPrompt, apiKey.trim(), preferredGrade, preferredDuration);
+        result = await generateGeminiLesson(aiPrompt, geminiKey.trim(), preferredGrade, preferredDuration);
+        if (geminiKey.trim() !== preferences.geminiApiKey) {
+          updatePreferences({ geminiApiKey: geminiKey.trim(), aiApiKey: geminiKey.trim(), aiProvider: 'gemini' });
+        }
       } else {
         // Built-in Pedagogical Engine with brief realistic composing progress
         await new Promise((r) => setTimeout(r, 450));
@@ -269,11 +287,6 @@ export const LessonPlannerView: React.FC = () => {
         assessmentStrategy: result.assessmentStrategy,
         differentiationNotes: result.differentiationNotes
       });
-
-      // Update API key if provided
-      if (apiKey.trim() && apiKey !== preferences.aiApiKey) {
-        updatePreferences({ aiApiKey: apiKey.trim() });
-      }
 
       // Crucial: Clear any search query that might filter out the new lesson
       setSearchQuery('');
@@ -761,30 +774,42 @@ export const LessonPlannerView: React.FC = () => {
             </div>
 
             {/* AI Engine Switch */}
-            <div className="flex rounded-xl bg-stone-100 dark:bg-stone-800/80 p-1 text-xs font-semibold">
+            <div className="flex flex-col sm:flex-row rounded-xl bg-stone-100 dark:bg-stone-800/80 p-1 text-xs font-semibold gap-1">
               <button
                 type="button"
                 onClick={() => setAiEngine('builtin')}
-                className={`flex-1 py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                className={`flex-1 py-1.5 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
                   aiEngine === 'builtin'
                     ? 'bg-white dark:bg-stone-900 text-purple-700 dark:text-purple-300 shadow-sm font-bold'
                     : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5 text-purple-500" />
-                <span>Built-In Pedagogical AI (Instant & Offline)</span>
+                <span>Built-In AI (Instant & Offline)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiEngine('claude')}
+                className={`flex-1 py-1.5 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                  aiEngine === 'claude'
+                    ? 'bg-white dark:bg-stone-900 text-amber-700 dark:text-amber-300 shadow-sm font-bold'
+                    : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+                }`}
+              >
+                <Wand2 className="w-3.5 h-3.5 text-amber-500" />
+                <span>Anthropic Claude (Claude 3.5)</span>
               </button>
               <button
                 type="button"
                 onClick={() => setAiEngine('gemini')}
-                className={`flex-1 py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                className={`flex-1 py-1.5 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
                   aiEngine === 'gemini'
                     ? 'bg-white dark:bg-stone-900 text-blue-600 dark:text-blue-400 shadow-sm font-bold'
                     : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
                 }`}
               >
                 <Zap className="w-3.5 h-3.5 text-blue-500" />
-                <span>Google Gemini Live AI</span>
+                <span>Google Gemini</span>
               </button>
             </div>
 
@@ -869,6 +894,37 @@ export const LessonPlannerView: React.FC = () => {
               />
             </div>
 
+            {/* Claude API Key Box (only if Claude mode selected) */}
+            {aiEngine === 'claude' && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-200">
+                    <Key className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Anthropic Claude API Key (Claude 3.5)</span>
+                  </div>
+                  <a
+                    href="https://console.anthropic.com/settings/keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-amber-700 dark:text-amber-400 underline hover:text-amber-900 flex items-center gap-1 font-semibold"
+                  >
+                    <span>Get Claude API key</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <input
+                  type="password"
+                  value={claudeKey}
+                  onChange={(e) => setClaudeKey(e.target.value)}
+                  placeholder="sk-ant-api03-..."
+                  className="w-full text-xs font-mono px-3 py-2 bg-white dark:bg-stone-900 border border-amber-200 dark:border-amber-700 rounded-xl text-stone-900 dark:text-white focus:outline-none focus:border-amber-500"
+                />
+                <p className="text-[10px] text-amber-800 dark:text-amber-300">
+                  Stored securely only in your browser local storage. Powers Claude 3.5 Haiku / Sonnet with deep Kodály & Orff pedagogical sequencing.
+                </p>
+              </div>
+            )}
+
             {/* Gemini API Key Box (only if Gemini AI mode selected) */}
             {aiEngine === 'gemini' && (
               <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 space-y-2 text-xs">
@@ -889,8 +945,8 @@ export const LessonPlannerView: React.FC = () => {
                 </div>
                 <input
                   type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
+                  value={geminiKey}
+                  onChange={(e) => setGeminiKey(e.target.value)}
                   placeholder="AIzaSy..."
                   className="w-full text-xs font-mono px-3 py-2 bg-white dark:bg-stone-900 border border-blue-200 dark:border-blue-700 rounded-xl text-stone-900 dark:text-white focus:outline-none focus:border-blue-500"
                 />
