@@ -1,7 +1,10 @@
 import React from 'react';
+import logoTrimmed from '../../assets/logo-trimmed.png';
+import logoIcon from '../../assets/logo-icon.png';
 
 interface LogoProps {
   collapsed?: boolean;
+  compact?: boolean;
   teacherName?: string;
   appName?: string;
   className?: string;
@@ -9,74 +12,72 @@ interface LogoProps {
 
 export const Logo: React.FC<LogoProps> = ({
   collapsed = false,
+  compact = false,
   teacherName = 'Christian Arthur',
   appName = 'Music Teacher Hub',
   className = ''
 }) => {
-  return (
-    <div className={`flex items-center gap-3 overflow-hidden select-none ${className}`}>
-      {/* Musical Emblem Icon */}
-      <div className="relative shrink-0 group">
-        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 p-0.5 shadow-md shadow-rose-500/20 group-hover:shadow-rose-500/35 transition-all duration-300 transform group-hover:scale-105">
-          <div className="w-full h-full bg-stone-900 rounded-[14px] flex items-center justify-center overflow-hidden relative">
-            {/* Background soundwaves */}
-            <svg
-              viewBox="0 0 40 40"
-              className="absolute inset-0 w-full h-full opacity-25"
-              fill="none"
-              stroke="currentColor"
-            >
-              <circle cx="20" cy="20" r="16" stroke="url(#logo-grad)" strokeWidth="1" strokeDasharray="2 3" />
-              <circle cx="20" cy="20" r="10" stroke="url(#logo-grad)" strokeWidth="0.75" />
-            </svg>
-
-            {/* Glowing Clef & Notes SVG */}
-            <svg
-              viewBox="0 0 24 24"
-              className="w-6 h-6 text-white drop-shadow relative z-10 transition-transform duration-300 group-hover:rotate-6"
-              fill="none"
-              stroke="url(#logo-grad)"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <defs>
-                <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#f59e0b" />
-                  <stop offset="50%" stopColor="#ec4899" />
-                  <stop offset="100%" stopColor="#818cf8" />
-                </linearGradient>
-              </defs>
-              {/* Connected eighth notes */}
-              <path d="M9 18V5l12-2v13" />
-              <circle cx="6" cy="18" r="3" fill="url(#logo-grad)" stroke="none" />
-              <circle cx="18" cy="16" r="3" fill="url(#logo-grad)" stroke="none" />
-              {/* Vibrant beam bar */}
-              <line x1="9" y1="5" x2="21" y2="3" stroke="url(#logo-grad)" strokeWidth="3.5" />
-            </svg>
-          </div>
+  if (collapsed) {
+    return (
+      <div className={`flex items-center justify-center select-none ${className}`}>
+        <div
+          className="w-11 h-11 rounded-xl bg-[#14171c] border border-stone-800/90 flex items-center justify-center p-1.5 shadow-md shadow-rose-950/20 hover:scale-105 transition-transform duration-200 group"
+          title={`${appName} — ${teacherName}`}
+        >
+          <img
+            src={logoIcon}
+            alt={appName}
+            className="w-full h-full object-contain filter drop-shadow group-hover:rotate-6 transition-transform duration-300"
+          />
         </div>
-
-        {/* Floating playful music dot */}
-        <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-400 rounded-full border-2 border-white dark:border-stone-900 animate-pulse" />
       </div>
+    );
+  }
 
-      {/* Title & Teacher Subtitle */}
-      {!collapsed && (
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <h1 className="font-extrabold text-sm sm:text-[15px] tracking-tight text-stone-900 dark:text-white leading-tight whitespace-nowrap bg-clip-text text-transparent bg-gradient-to-r from-stone-900 via-stone-800 to-indigo-950 dark:from-white dark:via-stone-100 dark:to-indigo-200">
-              {appName}
-            </h1>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300/50">
-              ♫ K-6
-            </span>
-          </div>
-          <p className="text-xs font-semibold text-rose-600 dark:text-rose-400 truncate leading-none mt-0.5 tracking-tight flex items-center gap-1">
-            <span>{teacherName}</span>
-          </p>
+  if (compact) {
+    return (
+      <div className={`flex items-center gap-2 select-none ${className}`}>
+        <div className="w-8 h-8 rounded-lg bg-[#14171c] border border-stone-800 flex items-center justify-center p-1 shadow-sm">
+          <img src={logoIcon} alt={appName} className="w-full h-full object-contain" />
         </div>
-      )}
+        <div>
+          <span className="font-extrabold text-xs text-stone-900 dark:text-white leading-tight block">
+            {appName}
+          </span>
+          <span className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 leading-none block">
+            {teacherName}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`w-full select-none ${className}`}>
+      <div className="w-full bg-[#13171d] hover:bg-[#171c24] rounded-xl p-2.5 shadow-md shadow-stone-950/20 border border-stone-800/80 transition-all duration-200 group">
+        {/* Main Logo Image & Badge */}
+        <div className="flex items-center justify-between gap-2">
+          <img
+            src={logoTrimmed}
+            alt={appName}
+            className="h-9 w-auto max-w-[170px] object-contain group-hover:scale-[1.02] transition-transform duration-200"
+          />
+          <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-mono font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+            ♫ K-6
+          </span>
+        </div>
+
+        {/* Teacher Subtitle & Subheading */}
+        <div className="mt-2 pt-1.5 border-t border-stone-800/80 flex items-center justify-between text-[11px] leading-tight">
+          <span className="font-semibold text-stone-200 truncate tracking-tight flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            {teacherName}
+          </span>
+          <span className="text-[10px] text-stone-400 font-medium">
+            Command Center
+          </span>
+        </div>
+      </div>
     </div>
   );
 };

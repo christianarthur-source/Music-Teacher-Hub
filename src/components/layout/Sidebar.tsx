@@ -93,7 +93,9 @@ export const Sidebar: React.FC = () => {
       }`}
     >
       {/* Brand Header with Custom Logo */}
-      <div className="p-4 flex items-center justify-between border-b border-stone-200/60 dark:border-stone-800">
+      <div className={`flex items-center border-b border-stone-200/60 dark:border-stone-800 ${
+        isSidebarCollapsed ? 'p-3 justify-center' : 'p-4 justify-between'
+      }`}>
         <Logo
           collapsed={isSidebarCollapsed}
           appName={preferences.appName}

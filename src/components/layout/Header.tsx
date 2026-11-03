@@ -38,6 +38,7 @@ export const Header: React.FC = () => {
       <div className="flex items-center gap-4">
         <div className="lg:hidden">
           <Logo
+            compact
             appName={preferences.appName}
             teacherName={preferences.teacherName || 'Christian Arthur'}
           />

@@ -3,8 +3,8 @@
   "name": "Music Teacher Hub — Command Center",
   "icons": [
     {
-      "src": "/vite.svg",
-      "type": "image/svg+xml",
+      "src": "logo-icon.png",
+      "type": "image/png",
       "sizes": "192x192 512x512"
     }
   ],
