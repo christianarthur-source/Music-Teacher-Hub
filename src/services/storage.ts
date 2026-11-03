@@ -117,6 +117,34 @@ class StorageService {
     this.setItem(STORAGE_KEYS.AREAS, areas);
   }
 
+  public addArea(area: Omit<Area, 'id'>): Area {
+    const newArea: Area = {
+      ...area,
+      id: 'area-' + Date.now().toString(36)
+    };
+    const areas = this.getAreas();
+    this.saveAreas([...areas, newArea]);
+    return newArea;
+  }
+
+  public updateArea(id: string, updates: Partial<Area>): void {
+    const areas = this.getAreas().map((a) => (a.id === id ? { ...a, ...updates } : a));
+    this.saveAreas(areas);
+  }
+
+  public deleteArea(id: string): void {
+    const areas = this.getAreas().filter((a) => a.id !== id);
+    this.saveAreas(areas);
+
+    // Unlink projects that were in this area
+    const projects = this.getProjects().map((p) => (p.areaId === id ? { ...p, areaId: '' } : p));
+    this.saveProjects(projects);
+
+    // Unlink tasks that were in this area
+    const tasks = this.getTasks().map((t) => (t.areaId === id ? { ...t, areaId: undefined } : t));
+    this.saveTasks(tasks);
+  }
+
   // Projects
   public getProjects(): Project[] {
     return this.getItem(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS);
@@ -144,6 +172,10 @@ class StorageService {
   public deleteProject(id: string): void {
     const projects = this.getProjects().filter((p) => p.id !== id);
     this.saveProjects(projects);
+
+    // Unlink tasks belonging to this project
+    const tasks = this.getTasks().map((t) => (t.projectId === id ? { ...t, projectId: undefined } : t));
+    this.saveTasks(tasks);
   }
 
   // Tasks
